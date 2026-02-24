@@ -17,4 +17,7 @@
 - [x] Adaptação automática entre modo áudio e modo texto/código
 - [x] No modo prova técnica: NÃO mostrar pergunta, só resposta direta sem explicações
 - [x] Testes vitest para backend
-- [ ] Checkpoint e entrega
+- [x] Checkpoint e entrega
+- [x] BUG: Botão central "TOQUE PARA INICIAR" não funciona ao clicar
+- [x] BUG: Câmera traseira não aparece como preview na tela (deve mostrar igual ao TOEFL Assist)
+- [x] Câmera traseira deve iniciar automaticamente ao entrar na tela do assistente
