@@ -44,3 +44,4 @@
 - [x] Chunks de áudio de 2 segundos (não 3)
 - [x] BUG: Respostas muito longas e repetindo a pergunta — deve ser ultra resumida (2-3 frases) em primeira pessoa
 - [x] BUG: Transcrição do entrevistador demorando muito (reduzido para chunks de 1 segundo)
+- [x] BUG: Pipeline corrigido — agora capta TODO áudio, mostra transcrição, DEPOIS filtra speaker, descarta candidato

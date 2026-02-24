@@ -63,6 +63,8 @@ export default function Assistant() {
   useEffect(() => { previousContextRef.current = previousContext; }, [previousContext]);
   useEffect(() => { voiceSampleRef.current = voiceSample; }, [voiceSample]);
 
+  const transcribeAudioOnly = trpc.transcribeAudioOnly.useMutation();
+  const analyzeAndRespond = trpc.analyzeAndRespond.useMutation();
   const processAudioFast = trpc.processAudioFast.useMutation();
   const processImageFast = trpc.processImageFast.useMutation();
 
@@ -238,18 +240,35 @@ export default function Assistant() {
         ctx = `[CANDIDATE_VOICE_SAMPLE: "${voiceSampleRef.current}"]\n${ctx}`;
       }
 
-      const data = await processAudioFast.mutateAsync({
+      // STEP 1: Transcribe only
+      const transcribeData = await transcribeAudioOnly.mutateAsync({
         audioBase64: base64,
         mimeType: cleanMime,
+      });
+      const transcription = transcribeData.transcription;
+      
+      // Show transcription immediately
+      setResult(prev => ({
+        transcription,
+        translation: prev?.translation || "",
+        answer: prev?.answer || "",
+        summaryPtBr: prev?.summaryPtBr || "",
+      }));
+      setSpeakerInfo("📝 Transcrevendo...");
+
+      // STEP 2: Analyze and respond
+      const analyzeData = await analyzeAndRespond.mutateAsync({
+        transcription,
         previousContext: ctx || undefined,
       });
+      const data = analyzeData;
 
       if (data.speaker === "interviewer" && data.answer) {
-        setResult({ transcription: data.transcription, translation: data.translation, answer: data.answer, summaryPtBr: data.summaryPtBr });
+        setResult({ transcription, translation: data.translation, answer: data.answer, summaryPtBr: data.summaryPtBr });
         setPreviousContext(prev => {
           const newCtx = prev
-            ? `${prev}\nQ: ${data.transcription}\nA: ${data.answer}`
-            : `Q: ${data.transcription}\nA: ${data.answer}`;
+            ? `${prev}\nQ: ${transcription}\nA: ${data.answer}`
+            : `Q: ${transcription}\nA: ${data.answer}`;
           // Keep context manageable
           const lines = newCtx.split("\n");
           return lines.length > 20 ? lines.slice(-20).join("\n") : newCtx;

@@ -21,7 +21,110 @@ export const appRouter = router({
     }),
   }),
 
-  // ULTRA-FAST: Upload + Transcribe + Identify Speaker + Answer in ONE pipeline
+  // STEP 1: Just transcribe and show everything
+  transcribeAudioOnly: publicProcedure
+    .input(z.object({
+      audioBase64: z.string(),
+      mimeType: z.string().default("audio/webm"),
+    }))
+    .mutation(async ({ input }) => {
+      const buffer = Buffer.from(input.audioBase64, "base64");
+      const ext = input.mimeType.includes("webm") ? "webm" : input.mimeType.includes("mp4") ? "m4a" : "mp3";
+      const key = `a/${Date.now().toString(36)}.${ext}`;
+      const { url } = await storagePut(key, buffer, input.mimeType);
+
+      const transcription = await transcribeAudio({
+        audioUrl: url,
+        language: "en",
+        prompt: "Interview transcription",
+      });
+      if ("error" in transcription) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: transcription.error });
+      }
+      const text = transcription.text?.trim() || "";
+      return { transcription: text };
+    }),
+
+  // STEP 2: Analyze transcription, identify speaker, generate answer only if interviewer
+  analyzeAndRespond: publicProcedure
+    .input(z.object({
+      transcription: z.string(),
+      previousContext: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      if (input.transcription.length < 3) {
+        return { speaker: "silence" as const, translation: "", answer: "", summaryPtBr: "" };
+      }
+
+      const result = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `You analyze interview transcriptions. Identify the speaker, then respond ONLY if it's the interviewer asking.
+
+SPEAKER IDENTIFICATION:
+- "interviewer": Questions, prompts, follow-ups (e.g. "Tell me about...", "What is...", "How did you...", "Can you explain...")
+- "candidate": Answers, explanations, self-descriptions (e.g. "I worked on...", "My experience...", "I built...")
+- "silence": Empty, noise, or unintelligible
+
+IF speaker is "interviewer": provide answer + translation + summary
+IF speaker is "candidate" or "silence": return speaker only, leave other fields empty
+
+Return ONLY valid JSON:
+{"speaker":"interviewer|candidate|silence","answer":"<English answer 2-3 sentences MAX, natural, human, first person, NO question repetition>","translation":"<PT-BR translation of question>","summary":"<1 PT-BR phrase max 12 words>"}
+
+ANSWER RULES (only when speaker=interviewer):
+- English, BRIEF 2-3 sentences MAX, 100% human natural
+- First person ONLY (I, my, we)
+- NO repeating question, NO filler, NO generic phrases
+- Direct answer with specific metrics from resume
+- Just what Rafael should speak, nothing else
+
+${RESUME_CONTEXT_FOR_LLM}`
+          },
+          ...(input.previousContext ? [{ role: "user" as const, content: `Context: ${input.previousContext}` }] : []),
+          { role: "user", content: input.transcription },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "interview_response",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                speaker: { type: "string", description: "interviewer, candidate, or silence" },
+                answer: { type: "string", description: "English answer or empty" },
+                translation: { type: "string", description: "PT-BR translation or empty" },
+                summary: { type: "string", description: "PT-BR summary or empty" },
+              },
+              required: ["speaker", "answer", "translation", "summary"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+
+      const content = result.choices[0]?.message?.content;
+      const raw = typeof content === "string" ? content : "{}";
+      try {
+        const parsed = JSON.parse(raw);
+        const speaker = parsed.speaker || "silence";
+        if (speaker === "candidate" || speaker === "silence") {
+          return { speaker, translation: "", answer: "", summaryPtBr: "" };
+        }
+        return {
+          speaker: "interviewer" as const,
+          translation: parsed.translation || "",
+          answer: parsed.answer || "",
+          summaryPtBr: parsed.summary || "",
+        };
+      } catch {
+        return { speaker: "error" as const, translation: "", answer: raw, summaryPtBr: "" };
+      }
+    }),
+
+  // LEGACY: Ultra-fast combined (kept for backward compatibility)
   processAudioFast: publicProcedure
     .input(z.object({
       audioBase64: z.string(),
@@ -29,13 +132,11 @@ export const appRouter = router({
       previousContext: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      // Step 1: Upload to S3
       const buffer = Buffer.from(input.audioBase64, "base64");
       const ext = input.mimeType.includes("webm") ? "webm" : input.mimeType.includes("mp4") ? "m4a" : "mp3";
       const key = `a/${Date.now().toString(36)}.${ext}`;
       const { url } = await storagePut(key, buffer, input.mimeType);
 
-      // Step 2: Transcribe
       const transcription = await transcribeAudio({
         audioUrl: url,
         language: "en",
@@ -49,12 +150,11 @@ export const appRouter = router({
         return { transcription: "", translation: "", answer: "", summaryPtBr: "", speaker: "silence" as const };
       }
 
-      // Step 3: ONE single LLM call — identify speaker + answer + translate + summary
       const result = await invokeLLM({
         messages: [
           {
             role: "system",
-            content: `You analyze interview audio transcriptions. First identify the speaker, then respond accordingly.
+            content: `You analyze interview transcriptions. Identify the speaker, then respond ONLY if it's the interviewer asking.
 
 SPEAKER IDENTIFICATION:
 - "interviewer": Questions, prompts, follow-ups (e.g. "Tell me about...", "What is...", "How did you...", "Can you explain...")
