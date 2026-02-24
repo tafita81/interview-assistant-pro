@@ -25,3 +25,6 @@
 - [x] Câmera em modo vídeo 4K (não foto) com configurações máximas
 - [x] OCR contínuo no stream de vídeo (captura frames automaticamente)
 - [x] Descartar frames duplicados para não encher memória (só processar quando tela mudar)
+- [x] BUG: Câmera ocupa tela toda — deve ser miniatura pequena no canto superior direito, restante para respostas/transcrições
+- [x] Layout landscape: forçar tela cheia horizontal ao abrir no Chrome
+- [x] Botão para forçar ultra wide na miniatura da câmera
