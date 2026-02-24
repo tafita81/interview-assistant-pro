@@ -53,3 +53,8 @@
 - [x] Captar áudio e processar simultaneamente
 - [x] Gerar resposta instantaneamente enquanto ouve
 - [x] Tudo em paralelo: captura + transcrição + tradução + resposta
+- [x] Otimizar para 10ms: chunks em tempo real de 10ms
+- [x] Transcrição streaming — não espera chunk completo
+- [x] Tradução em paralelo — começa enquanto transcreve
+- [x] Buffer circular — mantém histórico sem perder palavras
+- [x] LLM em tempo real — processa incrementalmente
