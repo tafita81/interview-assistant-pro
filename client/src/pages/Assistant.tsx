@@ -10,6 +10,8 @@ type ProcessResult = {
   summaryPtBr: string;
 };
 
+type LensMode = "0.5x" | "1x";
+
 export default function Assistant() {
   const [, navigate] = useLocation();
   const [isRecording, setIsRecording] = useState(false);
@@ -20,8 +22,9 @@ export default function Assistant() {
   const [copied, setCopied] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraProcessing, setCameraProcessing] = useState(false);
-  const [permissionsGranted, setPermissionsGranted] = useState(false);
   const [error, setError] = useState("");
+  const [lensMode, setLensMode] = useState<LensMode>("1x");
+  const [switchingLens, setSwitchingLens] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -33,13 +36,91 @@ export default function Assistant() {
   const processAudio = trpc.processAudio.useMutation();
   const processImage = trpc.processImage.useMutation();
 
+  // ===== CAMERA HELPERS =====
+  const getVideoConstraints = useCallback((lens: LensMode): MediaTrackConstraints => {
+    if (lens === "0.5x") {
+      // Ultra wide: use environment facing mode with wide angle
+      // On iOS, requesting a lower zoom / wider FOV
+      return {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 3840 },
+        height: { ideal: 2160 },
+        // @ts-ignore - advanced constraints for zoom
+        zoom: { ideal: 0.5 },
+        // @ts-ignore - some browsers support this
+        advanced: [{ zoom: 0.5 }],
+      };
+    }
+    // Normal 1x
+    return {
+      facingMode: { ideal: "environment" },
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+    };
+  }, []);
+
+  const startCameraWithLens = useCallback(async (lens: LensMode) => {
+    // Stop existing stream
+    cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
+    cameraStreamRef.current = null;
+
+    try {
+      const constraints = getVideoConstraints(lens);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: constraints,
+        audio: false,
+      });
+
+      cameraStreamRef.current = stream;
+
+      // Try to apply zoom via track capabilities
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        try {
+          const capabilities = videoTrack.getCapabilities() as any;
+          if (capabilities?.zoom) {
+            const targetZoom = lens === "0.5x"
+              ? capabilities.zoom.min
+              : Math.min(1, capabilities.zoom.max);
+            await videoTrack.applyConstraints({
+              // @ts-ignore
+              advanced: [{ zoom: targetZoom }],
+            });
+          }
+        } catch {
+          // Zoom not supported on this device, continue with default
+        }
+      }
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current?.play().catch(() => {});
+        };
+      }
+
+      setCameraReady(true);
+      setError("");
+    } catch (err: any) {
+      console.error("Camera error:", err);
+      setError("Erro ao acessar câmera.");
+    }
+  }, [getVideoConstraints]);
+
+  const switchLens = useCallback(async (lens: LensMode) => {
+    if (lens === lensMode && cameraReady) return;
+    setSwitchingLens(true);
+    setLensMode(lens);
+    await startCameraWithLens(lens);
+    setSwitchingLens(false);
+  }, [lensMode, cameraReady, startCameraWithLens]);
+
   // ===== AUTO-START CAMERA ON MOUNT =====
   useEffect(() => {
     let cancelled = false;
 
     const initCamera = async () => {
       try {
-        // Request camera (rear) permission
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: "environment" },
@@ -64,12 +145,9 @@ export default function Assistant() {
         }
 
         setCameraReady(true);
-        setPermissionsGranted(true);
         setError("");
       } catch (err: any) {
         console.error("Camera init error:", err);
-        // Camera failed but we can still use audio
-        setPermissionsGranted(true);
         setError("");
       }
     };
@@ -95,7 +173,6 @@ export default function Assistant() {
         },
       });
 
-      // Try different mime types for iOS compatibility
       let mimeType = "audio/webm;codecs=opus";
       if (!MediaRecorder.isTypeSupported(mimeType)) {
         mimeType = "audio/webm";
@@ -104,7 +181,7 @@ export default function Assistant() {
         mimeType = "audio/mp4";
       }
       if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = ""; // Let browser choose
+        mimeType = "";
       }
 
       const options: MediaRecorderOptions = {};
@@ -290,7 +367,6 @@ export default function Assistant() {
           >
             {result.answer}
           </p>
-          {/* PT-BR summary */}
           {result.summaryPtBr && (
             <p className="text-cyan/50 text-xs font-mono mt-2 italic">
               → {result.summaryPtBr}
@@ -319,7 +395,7 @@ export default function Assistant() {
         </div>
       )}
 
-      {/* ===== CAMERA PREVIEW (always visible when ready) ===== */}
+      {/* ===== CAMERA PREVIEW ===== */}
       <div className="flex-1 relative bg-black">
         <video
           ref={videoRef}
@@ -330,7 +406,42 @@ export default function Assistant() {
         />
         <canvas ref={canvasRef} className="hidden" />
 
-        {/* Capture button overlay */}
+        {/* Lens switching overlay */}
+        {switchingLens && (
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-20">
+            <Loader2 className="w-6 h-6 text-cyan animate-spin" />
+          </div>
+        )}
+
+        {/* ===== LENS SELECTOR (0.5x / 1x) ===== */}
+        {cameraReady && (
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2 z-10">
+            <button
+              onClick={() => switchLens("0.5x")}
+              disabled={switchingLens}
+              className={`w-11 h-11 rounded-full flex items-center justify-center font-mono text-xs font-bold transition-all ${
+                lensMode === "0.5x"
+                  ? "bg-cyan text-black scale-110"
+                  : "bg-black/60 text-white/70 border border-white/30 hover:border-white/60"
+              }`}
+            >
+              .5
+            </button>
+            <button
+              onClick={() => switchLens("1x")}
+              disabled={switchingLens}
+              className={`w-11 h-11 rounded-full flex items-center justify-center font-mono text-xs font-bold transition-all ${
+                lensMode === "1x"
+                  ? "bg-cyan text-black scale-110"
+                  : "bg-black/60 text-white/70 border border-white/30 hover:border-white/60"
+              }`}
+            >
+              1x
+            </button>
+          </div>
+        )}
+
+        {/* Capture button */}
         {cameraReady && (
           <button
             onClick={captureAndProcess}
@@ -346,7 +457,7 @@ export default function Assistant() {
           </button>
         )}
 
-        {/* Center overlay when no camera and no result */}
+        {/* Center overlay when no camera */}
         {!cameraReady && !result && !isProcessing && (
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <button
@@ -388,22 +499,7 @@ export default function Assistant() {
             cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
             cameraStreamRef.current = null;
             setCameraReady(false);
-          } : async () => {
-            try {
-              const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-                audio: false,
-              });
-              cameraStreamRef.current = stream;
-              if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-                videoRef.current.onloadedmetadata = () => videoRef.current?.play().catch(() => {});
-              }
-              setCameraReady(true);
-            } catch (err) {
-              console.error("Camera error:", err);
-            }
-          }}
+          } : () => startCameraWithLens(lensMode)}
           className={`w-12 h-12 rounded-full flex items-center justify-center border transition-all ${
             cameraReady
               ? "border-cyan bg-cyan/10 text-cyan"
