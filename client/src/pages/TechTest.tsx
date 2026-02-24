@@ -20,8 +20,8 @@ export default function TechTest() {
   const streamRef = useRef<MediaStream | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const generateAnswer = trpc.generateAnswer.useMutation();
-  const processImage = trpc.processImage.useMutation();
+  const generateAnswer = trpc.generateAnswerFast.useMutation();
+  const processImage = trpc.processImageFast.useMutation();
 
   const handleSubmit = async () => {
     if (!question.trim() || isProcessing) return;

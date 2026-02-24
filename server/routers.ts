@@ -4,6 +4,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { invokeLLM } from "./_core/llm";
+import type { Message } from "./_core/llm";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { transcribeAudio } from "./_core/voiceTranscription";
@@ -20,80 +21,105 @@ export const appRouter = router({
     }),
   }),
 
-  uploadAudio: publicProcedure
+  // ULTRA-FAST: Upload + Transcribe + Identify Speaker + Answer in ONE pipeline
+  processAudioFast: publicProcedure
     .input(z.object({
       audioBase64: z.string(),
       mimeType: z.string().default("audio/webm"),
-    }))
-    .mutation(async ({ input }) => {
-      const buffer = Buffer.from(input.audioBase64, "base64");
-      const ext = input.mimeType.includes("webm") ? "webm" : input.mimeType.includes("mp4") ? "m4a" : "mp3";
-      const key = `audio/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-      const { url } = await storagePut(key, buffer, input.mimeType);
-      return { url };
-    }),
-
-  processAudio: publicProcedure
-    .input(z.object({
-      audioUrl: z.string(),
       previousContext: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
+      // Step 1: Upload to S3
+      const buffer = Buffer.from(input.audioBase64, "base64");
+      const ext = input.mimeType.includes("webm") ? "webm" : input.mimeType.includes("mp4") ? "m4a" : "mp3";
+      const key = `a/${Date.now().toString(36)}.${ext}`;
+      const { url } = await storagePut(key, buffer, input.mimeType);
+
+      // Step 2: Transcribe
       const transcription = await transcribeAudio({
-        audioUrl: input.audioUrl,
+        audioUrl: url,
         language: "en",
-        prompt: "Transcribe this interview question accurately",
+        prompt: "Interview transcription",
       });
       if ("error" in transcription) {
         throw new TRPCError({ code: "BAD_REQUEST", message: transcription.error });
       }
-      const questionText = transcription.text;
+      const text = transcription.text?.trim() || "";
+      if (text.length < 3) {
+        return { transcription: "", translation: "", answer: "", summaryPtBr: "", speaker: "silence" as const };
+      }
 
-      const [translationResult, answerResult] = await Promise.all([
-        invokeLLM({
-          messages: [
-            { role: "system", content: "Translate to Brazilian Portuguese. Return ONLY the translation." },
-            { role: "user", content: questionText },
-          ],
-        }),
-        invokeLLM({
-          messages: [
-            {
-              role: "system",
-              content: `You are an interview coach for Rafael Rodrigues. Generate the PERFECT answer.
+      // Step 3: ONE single LLM call — identify speaker + answer + translate + summary
+      const result = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `You analyze interview audio transcriptions. First identify the speaker, then respond accordingly.
 
-RULES:
-- English, BRIEF (2-4 sentences max), 100% human and natural
-- First person, specific metrics from resume when relevant
-- NO filler, NO generic phrases, NO explanations of why
-- Just the answer he should speak
+SPEAKER IDENTIFICATION:
+- "interviewer": Questions, prompts, follow-ups (e.g. "Tell me about...", "What is...", "How did you...", "Can you explain...")
+- "candidate": Answers, explanations, self-descriptions (e.g. "I worked on...", "My experience...", "I built...")
+- "silence": Empty, noise, or unintelligible
+
+IF speaker is "interviewer": provide answer + translation + summary
+IF speaker is "candidate" or "silence": return speaker only, leave other fields empty
+
+Return ONLY valid JSON:
+{"speaker":"interviewer|candidate|silence","answer":"<English answer 2-4 sentences, natural, human, first person, resume metrics>","translation":"<PT-BR translation of question>","summary":"<1 PT-BR phrase max 12 words>"}
+
+ANSWER RULES (only when speaker=interviewer):
+- English, BRIEF 2-4 sentences max, 100% human natural
+- First person, use specific metrics from resume
+- NO filler, NO generic phrases
+- Just what Rafael should speak
 
 ${RESUME_CONTEXT_FOR_LLM}`
-            },
-            ...(input.previousContext ? [{ role: "user" as const, content: `Previous context: ${input.previousContext}` }] : []),
-            { role: "user", content: questionText },
-          ],
-        }),
-      ]);
-
-      const translation = typeof translationResult.choices[0]?.message?.content === "string"
-        ? translationResult.choices[0].message.content : "";
-      const answer = typeof answerResult.choices[0]?.message?.content === "string"
-        ? answerResult.choices[0].message.content : "";
-
-      const summaryResult = await invokeLLM({
-        messages: [
-          { role: "system", content: "Resuma em UMA ÚNICA FRASE CURTA em português brasileiro o que esta resposta está explicando. Máximo 15 palavras. Sem aspas." },
-          { role: "user", content: answer },
+          },
+          ...(input.previousContext ? [{ role: "user" as const, content: `Context: ${input.previousContext}` }] : []),
+          { role: "user", content: text },
         ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "interview_response",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                speaker: { type: "string", description: "interviewer, candidate, or silence" },
+                answer: { type: "string", description: "English answer or empty" },
+                translation: { type: "string", description: "PT-BR translation or empty" },
+                summary: { type: "string", description: "PT-BR summary or empty" },
+              },
+              required: ["speaker", "answer", "translation", "summary"],
+              additionalProperties: false,
+            },
+          },
+        },
       });
-      const summaryPtBr = typeof summaryResult.choices[0]?.message?.content === "string"
-        ? summaryResult.choices[0].message.content : "";
 
-      return { transcription: questionText, translation, answer, summaryPtBr };
+      const content = result.choices[0]?.message?.content;
+      const raw = typeof content === "string" ? content : "";
+      try {
+        const parsed = JSON.parse(raw);
+        const speaker = parsed.speaker || "silence";
+        if (speaker === "candidate" || speaker === "silence") {
+          return { transcription: text, translation: "", answer: "", summaryPtBr: "", speaker };
+        }
+        return {
+          transcription: text,
+          translation: parsed.translation || "",
+          answer: parsed.answer || "",
+          summaryPtBr: parsed.summary || "",
+          speaker: "interviewer" as const,
+        };
+      } catch {
+        return { transcription: text, translation: "", answer: raw, summaryPtBr: "", speaker: "interviewer" as const };
+      }
     }),
 
-  generateAnswer: publicProcedure
+  // FAST: Generate answer from text (1 LLM call)
+  generateAnswerFast: publicProcedure
     .input(z.object({
       question: z.string(),
       context: z.string().optional(),
@@ -101,98 +127,84 @@ ${RESUME_CONTEXT_FOR_LLM}`
     }))
     .mutation(async ({ input }) => {
       const systemPrompt = input.mode === "interview"
-        ? `You are an interview coach for Rafael Rodrigues. Generate the PERFECT answer.
-
-RULES:
-- English, BRIEF (2-4 sentences max), 100% human and natural
-- First person, specific metrics from resume when relevant
-- NO filler, NO generic phrases, NO explanations of why
-- Just the answer he should speak
-
+        ? `Interview coach for Rafael Rodrigues. Return ONLY JSON:
+{"answer":"<2-4 sentence English answer, natural, human, first person>","summary":"<1 PT-BR phrase max 12 words>"}
+RULES: English, BRIEF, 100% human, first person, resume metrics. NO filler.
 ${RESUME_CONTEXT_FOR_LLM}`
-        : `You are a technical expert helping with a coding/technical test.
-
-RULES:
-- Give ONLY the direct answer/code, NOTHING else
-- NO explanations, NO comments unless part of the code
-- SQL: exact query. Python: exact code. Multiple choice: ONLY the correct option
-- Technical concept: 1-2 sentence direct answer max
-- Ready to copy-paste directly into the test
-- Be 100% accurate
-
+        : `Technical expert. Return ONLY JSON:
+{"answer":"<direct answer/code only>","summary":"<1 PT-BR phrase max 12 words>"}
+RULES: ONLY direct answer/code. NO explanations. SQL=exact query. Python=exact code. Multiple choice=correct option only.
 ${RESUME_CONTEXT_FOR_LLM}`;
 
       const result = await invokeLLM({
         messages: [
           { role: "system", content: systemPrompt },
-          ...(input.context ? [{ role: "user" as const, content: `Previous context: ${input.context}` }] : []),
+          ...(input.context ? [{ role: "user" as const, content: `Context: ${input.context}` }] : []),
           { role: "user", content: input.question },
         ],
-      });
-
-      const answer = typeof result.choices[0]?.message?.content === "string"
-        ? result.choices[0].message.content : "";
-
-      const summaryResult = await invokeLLM({
-        messages: [
-          { role: "system", content: input.mode === "interview"
-            ? "Resuma em UMA ÚNICA FRASE CURTA em português brasileiro o que esta resposta está explicando. Máximo 15 palavras. Sem aspas."
-            : "Resuma em UMA ÚNICA FRASE CURTA em português brasileiro o que esta resposta/código faz. Máximo 15 palavras. Sem aspas."
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "answer_response",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                answer: { type: "string", description: "The answer" },
+                summary: { type: "string", description: "PT-BR summary" },
+              },
+              required: ["answer", "summary"],
+              additionalProperties: false,
+            },
           },
-          { role: "user", content: answer },
-        ],
+        },
       });
-      const summaryPtBr = typeof summaryResult.choices[0]?.message?.content === "string"
-        ? summaryResult.choices[0].message.content : "";
 
-      return { answer, summaryPtBr };
+      const content = result.choices[0]?.message?.content;
+      const raw = typeof content === "string" ? content : "{}";
+      try {
+        const parsed = JSON.parse(raw);
+        return { answer: parsed.answer || "", summaryPtBr: parsed.summary || "" };
+      } catch {
+        return { answer: raw, summaryPtBr: "" };
+      }
     }),
 
-  processImage: publicProcedure
+  // FAST: Process image (1 LLM call)
+  processImageFast: publicProcedure
     .input(z.object({
       imageBase64: z.string(),
       context: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      const result = await invokeLLM({
-        messages: [
-          {
-            role: "system",
-            content: `You are a technical expert helping with a coding/technical test.
-
-RULES:
-- Look at the image and give ONLY the direct answer/code
-- NO explanations, NO reasoning, NO comments
-- SQL: exact query. Python: exact code. Multiple choice: ONLY the correct option
-- Ready to copy-paste directly
-- Be 100% accurate
-
+      const messages: Message[] = [
+        {
+          role: "system",
+          content: `Technical expert. Return ONLY JSON:
+{"answer":"<direct answer/code only>","summary":"<1 PT-BR phrase max 12 words>"}
+RULES: ONLY direct answer/code. NO explanations. SQL=exact query. Python=exact code. Multiple choice=correct option letter only. 100% accurate.
 ${RESUME_CONTEXT_FOR_LLM}`
-          },
-          ...(input.context ? [{ role: "user" as const, content: `Previous context: ${input.context}` }] : []),
-          {
-            role: "user",
-            content: [
-              { type: "text", text: "Give me the direct answer for this. No explanations." },
-              { type: "image_url", image_url: { url: `data:image/jpeg;base64,${input.imageBase64}`, detail: "high" } },
-            ],
-          },
-        ],
-      });
+        },
+        ...(input.context ? [{ role: "user" as const, content: `Context: ${input.context}` }] : []),
+        {
+          role: "user" as const,
+          content: [
+            { type: "text" as const, text: "Direct answer only." },
+            { type: "image_url" as const, image_url: { url: `data:image/jpeg;base64,${input.imageBase64}`, detail: "high" as const } },
+          ],
+        },
+      ];
 
-      const answer = typeof result.choices[0]?.message?.content === "string"
-        ? result.choices[0].message.content : "";
+      const result = await invokeLLM({ messages });
 
-      const summaryResult = await invokeLLM({
-        messages: [
-          { role: "system", content: "Resuma em UMA ÚNICA FRASE CURTA em português brasileiro o que esta resposta/código faz. Máximo 15 palavras. Sem aspas." },
-          { role: "user", content: answer },
-        ],
-      });
-      const summaryPtBr = typeof summaryResult.choices[0]?.message?.content === "string"
-        ? summaryResult.choices[0].message.content : "";
-
-      return { answer, summaryPtBr };
+      const content = result.choices[0]?.message?.content;
+      const raw = typeof content === "string" ? content : "{}";
+      try {
+        const parsed = JSON.parse(raw);
+        return { answer: parsed.answer || "", summaryPtBr: parsed.summary || "" };
+      } catch {
+        return { answer: raw, summaryPtBr: "" };
+      }
     }),
 });
 

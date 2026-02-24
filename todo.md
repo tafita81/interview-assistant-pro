@@ -32,3 +32,13 @@
 - [x] Áudio contínuo: transcreve em tempo real, traduz PT-BR, gera resposta — tudo automático
 - [x] Remover botão de gravar — tudo é plug and play
 - [x] Auto-scan de câmera já ativo por padrão ao entrar
+- [x] BUG: Transcrição e resposta muito lenta — otimizar para menos de 2 segundos
+- [x] Chunks de áudio menores (2s em vez de 8s)
+- [x] Combinar tradução + resposta + summary em 1 única chamada LLM (em vez de 3)
+- [x] Pipeline paralelo: upload + transcrição simultâneos
+- [x] Identificar automaticamente quem fala: entrevistador (pergunta) vs candidato (resposta)
+- [x] Descartar transcrição do candidato para não interferir na análise
+- [x] Pipeline ultra-rápido: 1 única chamada LLM combinada (resposta + tradução + summary)
+- [x] Chunks de áudio de 2 segundos para velocidade máxima
+- [x] Teste de voz do candidato opcional para calibrar e filtrar melhor
+- [x] Chunks de áudio de 2 segundos (não 3)
