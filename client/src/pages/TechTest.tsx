@@ -7,7 +7,6 @@ export default function TechTest() {
   const [, navigate] = useLocation();
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
-  const [summaryPtBr, setSummaryPtBr] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [fontSize, setFontSize] = useState(16);
@@ -33,7 +32,6 @@ export default function TechTest() {
         mode: "technical",
       });
       setAnswer(data.answer);
-      setSummaryPtBr(data.summaryPtBr);
       setContext((prev) =>
         prev ? `${prev}\nQ: ${question}\nA: ${data.answer}` : `Q: ${question}\nA: ${data.answer}`
       );
@@ -93,7 +91,6 @@ export default function TechTest() {
         context: context || undefined,
       });
       setAnswer(data.answer);
-      setSummaryPtBr(data.summaryPtBr);
     } catch (err) {
       console.error("Image process error:", err);
     } finally {
@@ -162,12 +159,7 @@ export default function TechTest() {
           >
             {answer}
           </pre>
-          {/* PT-BR summary */}
-          {summaryPtBr && (
-            <p className="text-cyan/50 text-xs font-mono mt-2 italic">
-              → {summaryPtBr}
-            </p>
-          )}
+
         </div>
       )}
 
@@ -274,7 +266,6 @@ export default function TechTest() {
           <button
             onClick={() => {
               setAnswer("");
-              setSummaryPtBr("");
               setQuestion("");
               setContext("");
             }}

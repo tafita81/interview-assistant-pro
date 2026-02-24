@@ -48,3 +48,7 @@
 - [x] Desabilitar descarte de candidato — transcrever TUDO em tempo real
 - [x] Auto-reset após 5 segundos de silêncio — limpa tela e reinicia captura
 - [x] Análise inteligente de speaker — identifica pergunta vs resposta, só responde pergunta
+- [x] CRÍTICO: Remover lógica de identificação de speaker (isQuestion) — transcrever TODO áudio sem filtro
+- [x] Corrigir erros TypeScript: remover referências a summaryPtBr
+- [x] Criar testes vitest para validar pipeline de transcrição + tradução + resposta
+- [x] Todos os 16 testes passando

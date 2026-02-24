@@ -23,10 +23,8 @@ vi.mock("./_core/llm", () => ({
       message: {
         role: "assistant",
         content: JSON.stringify({
-          speaker: "interviewer",
           answer: "I have 5 years building data pipelines with Python, SQL, and cloud platforms.",
-          translation: "Me conte sobre sua experiência com engenharia de dados",
-          summary: "Experiência em engenharia de dados com Python e SQL"
+          translation: "Me conte sobre sua experiência com engenharia de dados"
         })
       },
       finish_reason: "stop",
@@ -43,17 +41,15 @@ function createPublicContext(): TrpcContext {
 }
 
 describe("processAudioFast", () => {
-  it("processes audio and returns speaker identification with answer", async () => {
+  it("processes audio and returns transcription with answer", async () => {
     const ctx = createPublicContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.processAudioFast({
       audioBase64: Buffer.from("fake audio data").toString("base64"),
       mimeType: "audio/webm",
     });
-    expect(result.speaker).toBe("interviewer");
     expect(result.answer).toBeTruthy();
     expect(result.translation).toBeTruthy();
-    expect(result.summaryPtBr).toBeTruthy();
     expect(result.transcription).toBeTruthy();
   });
 
@@ -65,7 +61,6 @@ describe("processAudioFast", () => {
       mimeType: "audio/webm",
       previousContext: "Q: Tell me about yourself\nA: I have 18+ years in data.",
     });
-    expect(result.speaker).toBe("interviewer");
     expect(result.answer).toBeTruthy();
   });
 });

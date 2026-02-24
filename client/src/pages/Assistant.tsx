@@ -7,7 +7,6 @@ type ProcessResult = {
   transcription: string;
   translation: string;
   answer: string;
-  summaryPtBr: string;
 };
 
 type LensMode = "0.5x" | "1x";
@@ -156,7 +155,7 @@ export default function Assistant() {
     try {
       const res = await processImageFast.mutateAsync({ imageBase64: frame.base64, context: previousContextRef.current || undefined });
       if (res.answer) {
-        setResult(prev => ({ transcription: prev?.transcription || "", translation: prev?.translation || "", answer: res.answer, summaryPtBr: res.summaryPtBr }));
+        setResult(prev => ({ transcription: prev?.transcription || "", translation: prev?.translation || "", answer: res.answer }));
       }
     } catch {}
     finally { isProcessingImageRef.current = false; setCameraProcessing(false); }
@@ -252,7 +251,6 @@ export default function Assistant() {
         transcription,
         translation: prev?.translation || "",
         answer: prev?.answer || "",
-        summaryPtBr: prev?.summaryPtBr || "",
       }));
       setSpeakerInfo("📝 Transcrevendo...");
 
@@ -263,8 +261,8 @@ export default function Assistant() {
       });
       const data = analyzeData;
 
-      if (data.isQuestion && data.answer) {
-        setResult({ transcription, translation: data.translation, answer: data.answer, summaryPtBr: data.summaryPtBr });
+      if (data.answer) {
+        setResult({ transcription, translation: data.translation, answer: data.answer });
         setPreviousContext(prev => {
           const newCtx = prev
             ? `${prev}\nQ: ${transcription}\nA: ${data.answer}`
@@ -275,9 +273,6 @@ export default function Assistant() {
         });
         setSpeakerInfo("🎤 Pergunta do Entrevistador");
         setAudioStatus("✓");
-      } else if (!data.isQuestion) {
-        setSpeakerInfo("👤 Resposta do Candidato (ignorada)");
-        setAudioStatus("Ouvindo...");
       } else {
         setAudioStatus("Ouvindo...");
         setSpeakerInfo("");
@@ -370,7 +365,7 @@ export default function Assistant() {
     try {
       const data = await processImageFast.mutateAsync({ imageBase64: base64, context: previousContext || undefined });
       if (data.answer) {
-        setResult(prev => ({ transcription: prev?.transcription || "", translation: prev?.translation || "", answer: data.answer, summaryPtBr: data.summaryPtBr }));
+        setResult(prev => ({ transcription: prev?.transcription || "", translation: prev?.translation || "", answer: data.answer }));
       }
     } catch { setError("Erro imagem."); }
     finally { setCameraProcessing(false); }
@@ -516,9 +511,7 @@ export default function Assistant() {
             <p className="text-white font-medium leading-relaxed pr-32" style={{ fontSize: `${fontSize}px` }}>
               {result.answer}
             </p>
-            {result.summaryPtBr && (
-              <p className="text-cyan/50 text-xs font-mono mt-2 italic pr-32">→ {result.summaryPtBr}</p>
-            )}
+
           </div>
         )}
 

@@ -45,7 +45,7 @@ export const appRouter = router({
       return { transcription: text };
     }),
 
-  // STEP 2: Analyze transcription, identify speaker, generate answer only if interviewer
+  // STEP 2: Translate + Generate answer for ANY transcription (NO speaker filtering)
   analyzeAndRespond: publicProcedure
     .input(z.object({
       transcription: z.string(),
@@ -53,26 +53,21 @@ export const appRouter = router({
     }))
     .mutation(async ({ input }) => {
       if (input.transcription.length < 3) {
-        return { isQuestion: false, translation: "", answer: "", summaryPtBr: "" };
+        return { translation: "", answer: "" };
       }
 
       const result = await invokeLLM({
         messages: [
           {
             role: "system",
-            content: `You analyze interview transcriptions. Determine if it's a question/prompt or a statement.
-
-DETERMINATION:
-- "question": Questions, prompts, follow-ups (Tell me about..., What is..., How did you..., Can you explain..., Describe...)
-- "statement": Answers, explanations, self-descriptions (I worked on..., My experience..., I built..., I achieved...)
-
-IF it's a question: provide answer + translation + summary
-IF it's a statement: return isQuestion=false, leave other fields empty
+            content: `You are an interview coach for Rafael Rodrigues. For ANY transcription:
+1. Translate to PT-BR
+2. Generate a brief answer (2-3 sentences MAX) in first person
 
 Return ONLY valid JSON:
-{"isQuestion":true|false,"answer":"<English answer 2-3 sentences MAX, natural, human, first person, NO question repetition>","translation":"<PT-BR translation of question>","summary":"<1 PT-BR phrase max 12 words>"}
+{"translation":"<PT-BR translation>","answer":"<English answer 2-3 sentences MAX, natural, human, first person>"}
 
-ANSWER RULES (only if isQuestion=true):
+ANSWER RULES:
 - English, BRIEF 2-3 sentences MAX, 100% human natural
 - First person ONLY (I, my, we)
 - NO repeating question, NO filler, NO generic phrases
@@ -92,12 +87,10 @@ ${RESUME_CONTEXT_FOR_LLM}`
             schema: {
               type: "object",
               properties: {
-                isQuestion: { type: "boolean", description: "true if question, false if statement" },
-                answer: { type: "string", description: "English answer or empty" },
-                translation: { type: "string", description: "PT-BR translation or empty" },
-                summary: { type: "string", description: "PT-BR summary or empty" },
+                translation: { type: "string", description: "PT-BR translation" },
+                answer: { type: "string", description: "English answer" },
               },
-              required: ["isQuestion", "answer", "translation", "summary"],
+              required: ["translation", "answer"],
               additionalProperties: false,
             },
           },
@@ -108,18 +101,12 @@ ${RESUME_CONTEXT_FOR_LLM}`
       const raw = typeof content === "string" ? content : "{}";
       try {
         const parsed = JSON.parse(raw);
-        const isQuestion = parsed.isQuestion === true;
-        if (!isQuestion) {
-          return { isQuestion: false, translation: "", answer: "", summaryPtBr: "" };
-        }
         return {
-          isQuestion: true,
           translation: parsed.translation || "",
           answer: parsed.answer || "",
-          summaryPtBr: parsed.summary || "",
         };
       } catch {
-        return { isQuestion: false, translation: "", answer: raw, summaryPtBr: "" };
+        return { translation: "", answer: raw };
       }
     }),
 
@@ -146,26 +133,21 @@ ${RESUME_CONTEXT_FOR_LLM}`
       }
       const text = transcription.text?.trim() || "";
       if (text.length < 3) {
-        return { transcription: "", translation: "", answer: "", summaryPtBr: "", speaker: "silence" as const };
+        return { transcription: "", translation: "", answer: "" };
       }
 
       const result = await invokeLLM({
         messages: [
           {
             role: "system",
-            content: `You analyze interview transcriptions. Determine if it's a question/prompt or a statement.
-
-DETERMINATION:
-- "question": Questions, prompts, follow-ups (Tell me about..., What is..., How did you..., Can you explain..., Describe...)
-- "statement": Answers, explanations, self-descriptions (I worked on..., My experience..., I built..., I achieved...)
-
-IF it's a question: provide answer + translation + summary
-IF it's a statement: return isQuestion=false, leave other fields empty
+            content: `You are an interview coach for Rafael Rodrigues. For ANY transcription:
+1. Translate to PT-BR
+2. Generate a brief answer (2-3 sentences MAX) in first person
 
 Return ONLY valid JSON:
-{"isQuestion":true|false,"answer":"<English answer 2-3 sentences MAX, natural, human, first person, NO question repetition>","translation":"<PT-BR translation of question>","summary":"<1 PT-BR phrase max 12 words>"}
+{"translation":"<PT-BR translation>","answer":"<English answer 2-3 sentences MAX, natural, human, first person>"}
 
-ANSWER RULES (only if isQuestion=true):
+ANSWER RULES:
 - English, BRIEF 2-3 sentences MAX, 100% human natural
 - First person ONLY (I, my, we)
 - NO repeating question, NO filler, NO generic phrases
@@ -185,12 +167,10 @@ ${RESUME_CONTEXT_FOR_LLM}`
             schema: {
               type: "object",
               properties: {
-                isQuestion: { type: "boolean", description: "true if question, false if statement" },
-                answer: { type: "string", description: "English answer or empty" },
-                translation: { type: "string", description: "PT-BR translation or empty" },
-                summary: { type: "string", description: "PT-BR summary or empty" },
+                translation: { type: "string", description: "PT-BR translation" },
+                answer: { type: "string", description: "English answer" },
               },
-              required: ["isQuestion", "answer", "translation", "summary"],
+              required: ["translation", "answer"],
               additionalProperties: false,
             },
           },
@@ -201,19 +181,13 @@ ${RESUME_CONTEXT_FOR_LLM}`
       const raw = typeof content === "string" ? content : "";
       try {
         const parsed = JSON.parse(raw);
-        const speaker = parsed.speaker || "silence";
-        if (speaker === "candidate" || speaker === "silence") {
-          return { transcription: text, translation: "", answer: "", summaryPtBr: "", speaker };
-        }
         return {
           transcription: text,
           translation: parsed.translation || "",
           answer: parsed.answer || "",
-          summaryPtBr: parsed.summary || "",
-          speaker: "interviewer" as const,
         };
       } catch {
-        return { transcription: text, translation: "", answer: raw, summaryPtBr: "", speaker: "interviewer" as const };
+        return { transcription: text, translation: "", answer: raw };
       }
     }),
 
@@ -227,11 +201,11 @@ ${RESUME_CONTEXT_FOR_LLM}`
     .mutation(async ({ input }) => {
       const systemPrompt = input.mode === "interview"
         ? `Interview coach for Rafael Rodrigues. Return ONLY JSON:
-{"answer":"<2-3 sentence English answer, natural, human, first person, NO question repetition>","summary":"<1 PT-BR phrase max 12 words>"}
+{"answer":"<2-3 sentence English answer, natural, human, first person, NO question repetition>"}
 RULES: English, BRIEF 2-3 MAX, 100% human, first person ONLY, resume metrics. NO filler, NO question repetition.
 ${RESUME_CONTEXT_FOR_LLM}`
         : `Technical expert. Return ONLY JSON:
-{"answer":"<direct answer/code only>","summary":"<1 PT-BR phrase max 12 words>"}
+{"answer":"<direct answer/code only>"}
 RULES: ONLY direct answer/code. NO explanations. SQL=exact query. Python=exact code. Multiple choice=correct option letter only. 100% accurate, ultra-fast.
 ${RESUME_CONTEXT_FOR_LLM}`;
 
@@ -250,9 +224,8 @@ ${RESUME_CONTEXT_FOR_LLM}`;
               type: "object",
               properties: {
                 answer: { type: "string", description: "The answer" },
-                summary: { type: "string", description: "PT-BR summary" },
               },
-              required: ["answer", "summary"],
+              required: ["answer"],
               additionalProperties: false,
             },
           },
@@ -263,9 +236,9 @@ ${RESUME_CONTEXT_FOR_LLM}`;
       const raw = typeof content === "string" ? content : "{}";
       try {
         const parsed = JSON.parse(raw);
-        return { answer: parsed.answer || "", summaryPtBr: parsed.summary || "" };
+        return { answer: parsed.answer || "" };
       } catch {
-        return { answer: raw, summaryPtBr: "" };
+        return { answer: raw };
       }
     }),
 
@@ -273,6 +246,7 @@ ${RESUME_CONTEXT_FOR_LLM}`;
   processImageFast: publicProcedure
     .input(z.object({
       imageBase64: z.string(),
+      mimeType: z.string().default("image/jpeg"),
       context: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
@@ -280,7 +254,7 @@ ${RESUME_CONTEXT_FOR_LLM}`;
         {
           role: "system",
           content: `Technical expert. Return ONLY JSON:
-{"answer":"<direct answer/code only>","summary":"<1 PT-BR phrase max 12 words>"}
+{"answer":"<direct answer/code only>"}
 RULES: ONLY direct answer/code. NO explanations. SQL=exact query. Python=exact code. Multiple choice=correct option letter only. 100% accurate.
 ${RESUME_CONTEXT_FOR_LLM}`
         },
@@ -289,7 +263,7 @@ ${RESUME_CONTEXT_FOR_LLM}`
           role: "user" as const,
           content: [
             { type: "text" as const, text: "Direct answer only." },
-            { type: "image_url" as const, image_url: { url: `data:image/jpeg;base64,${input.imageBase64}`, detail: "high" as const } },
+            { type: "image_url" as const, image_url: { url: `data:${input.mimeType};base64,${input.imageBase64}`, detail: "high" as const } },
           ],
         },
       ];
@@ -300,9 +274,9 @@ ${RESUME_CONTEXT_FOR_LLM}`
       const raw = typeof content === "string" ? content : "{}";
       try {
         const parsed = JSON.parse(raw);
-        return { answer: parsed.answer || "", summaryPtBr: parsed.summary || "" };
+        return { answer: parsed.answer || "" };
       } catch {
-        return { answer: raw, summaryPtBr: "" };
+        return { answer: raw };
       }
     }),
 });
