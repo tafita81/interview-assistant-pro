@@ -65,13 +65,14 @@ IF speaker is "interviewer": provide answer + translation + summary
 IF speaker is "candidate" or "silence": return speaker only, leave other fields empty
 
 Return ONLY valid JSON:
-{"speaker":"interviewer|candidate|silence","answer":"<English answer 2-4 sentences, natural, human, first person, resume metrics>","translation":"<PT-BR translation of question>","summary":"<1 PT-BR phrase max 12 words>"}
+{"speaker":"interviewer|candidate|silence","answer":"<English answer 2-3 sentences MAX, natural, human, first person, NO question repetition>","translation":"<PT-BR translation of question>","summary":"<1 PT-BR phrase max 12 words>"}
 
 ANSWER RULES (only when speaker=interviewer):
-- English, BRIEF 2-4 sentences max, 100% human natural
-- First person, use specific metrics from resume
-- NO filler, NO generic phrases
-- Just what Rafael should speak
+- English, BRIEF 2-3 sentences MAX, 100% human natural
+- First person ONLY (I, my, we)
+- NO repeating question, NO filler, NO generic phrases
+- Direct answer with specific metrics from resume
+- Just what Rafael should speak, nothing else
 
 ${RESUME_CONTEXT_FOR_LLM}`
           },
@@ -128,12 +129,12 @@ ${RESUME_CONTEXT_FOR_LLM}`
     .mutation(async ({ input }) => {
       const systemPrompt = input.mode === "interview"
         ? `Interview coach for Rafael Rodrigues. Return ONLY JSON:
-{"answer":"<2-4 sentence English answer, natural, human, first person>","summary":"<1 PT-BR phrase max 12 words>"}
-RULES: English, BRIEF, 100% human, first person, resume metrics. NO filler.
+{"answer":"<2-3 sentence English answer, natural, human, first person, NO question repetition>","summary":"<1 PT-BR phrase max 12 words>"}
+RULES: English, BRIEF 2-3 MAX, 100% human, first person ONLY, resume metrics. NO filler, NO question repetition.
 ${RESUME_CONTEXT_FOR_LLM}`
         : `Technical expert. Return ONLY JSON:
 {"answer":"<direct answer/code only>","summary":"<1 PT-BR phrase max 12 words>"}
-RULES: ONLY direct answer/code. NO explanations. SQL=exact query. Python=exact code. Multiple choice=correct option only.
+RULES: ONLY direct answer/code. NO explanations. SQL=exact query. Python=exact code. Multiple choice=correct option letter only. 100% accurate, ultra-fast.
 ${RESUME_CONTEXT_FOR_LLM}`;
 
       const result = await invokeLLM({

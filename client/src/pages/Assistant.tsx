@@ -304,13 +304,13 @@ export default function Assistant() {
 
       startNewRecorder();
 
-      // 2-second chunks for maximum speed
+      // 1-second chunks for ULTRA maximum speed
       audioIntervalRef.current = setInterval(() => {
         if (mediaRecorderRef.current?.state === "recording") {
           mediaRecorderRef.current.stop();
         }
-        setTimeout(() => startNewRecorder(), 100);
-      }, 2000);
+        setTimeout(() => startNewRecorder(), 50);
+      }, 1000);
 
       setAudioActive(true);
       setAudioStatus("Ouvindo...");

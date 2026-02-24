@@ -42,3 +42,5 @@
 - [x] Chunks de áudio de 2 segundos para velocidade máxima
 - [x] Teste de voz do candidato opcional para calibrar e filtrar melhor
 - [x] Chunks de áudio de 2 segundos (não 3)
+- [x] BUG: Respostas muito longas e repetindo a pergunta — deve ser ultra resumida (2-3 frases) em primeira pessoa
+- [x] BUG: Transcrição do entrevistador demorando muito (reduzido para chunks de 1 segundo)
