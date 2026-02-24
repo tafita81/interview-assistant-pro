@@ -22,3 +22,6 @@
 - [x] BUG: Câmera traseira não aparece como preview na tela (deve mostrar igual ao TOEFL Assist)
 - [x] Câmera traseira deve iniciar automaticamente ao entrar na tela do assistente
 - [x] Botões de seleção de lente da câmera: ultra wide (0.5x) e normal (1x)
+- [x] Câmera em modo vídeo 4K (não foto) com configurações máximas
+- [x] OCR contínuo no stream de vídeo (captura frames automaticamente)
+- [x] Descartar frames duplicados para não encher memória (só processar quando tela mudar)

@@ -1,5 +1,5 @@
 import { trpc } from "@/lib/trpc";
-import { ArrowLeft, Mic, Square, Loader2, Copy, Check, Camera } from "lucide-react";
+import { ArrowLeft, Mic, Square, Loader2, Copy, Check, Camera, Scan, ScanLine } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 
@@ -11,6 +11,21 @@ type ProcessResult = {
 };
 
 type LensMode = "0.5x" | "1x";
+
+// ===== FRAME DIFF DETECTION =====
+// Compare two ImageData pixel arrays to detect if screen changed
+function computeFrameDiff(prev: Uint8ClampedArray, curr: Uint8ClampedArray, sampleStep: number): number {
+  let diff = 0;
+  let count = 0;
+  for (let i = 0; i < prev.length; i += 4 * sampleStep) {
+    const dr = Math.abs(prev[i] - curr[i]);
+    const dg = Math.abs(prev[i + 1] - curr[i + 1]);
+    const db = Math.abs(prev[i + 2] - curr[i + 2]);
+    diff += (dr + dg + db) / 3;
+    count++;
+  }
+  return count > 0 ? diff / count : 0;
+}
 
 export default function Assistant() {
   const [, navigate] = useLocation();
@@ -25,42 +40,52 @@ export default function Assistant() {
   const [error, setError] = useState("");
   const [lensMode, setLensMode] = useState<LensMode>("1x");
   const [switchingLens, setSwitchingLens] = useState(false);
+  const [autoScan, setAutoScan] = useState(false);
+  const [scanStatus, setScanStatus] = useState("");
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const diffCanvasRef = useRef<HTMLCanvasElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
+  const prevFrameDataRef = useRef<Uint8ClampedArray | null>(null);
+  const autoScanIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isProcessingRef = useRef(false);
+  const lastProcessedHashRef = useRef("");
+  const previousContextRef = useRef("");
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    previousContextRef.current = previousContext;
+  }, [previousContext]);
 
   const uploadAudio = trpc.uploadAudio.useMutation();
   const processAudio = trpc.processAudio.useMutation();
   const processImage = trpc.processImage.useMutation();
 
-  // ===== CAMERA HELPERS =====
+  // ===== CAMERA: 4K VIDEO CONSTRAINTS =====
   const getVideoConstraints = useCallback((lens: LensMode): MediaTrackConstraints => {
+    // Always request maximum 4K resolution for video stream
+    const base: MediaTrackConstraints = {
+      facingMode: { ideal: "environment" },
+      width: { ideal: 3840, min: 1920 },
+      height: { ideal: 2160, min: 1080 },
+      frameRate: { ideal: 30, max: 60 },
+    };
+
     if (lens === "0.5x") {
-      // Ultra wide: use environment facing mode with wide angle
-      // On iOS, requesting a lower zoom / wider FOV
       return {
-        facingMode: { ideal: "environment" },
-        width: { ideal: 3840 },
-        height: { ideal: 2160 },
-        // @ts-ignore - advanced constraints for zoom
+        ...base,
+        // @ts-ignore
         zoom: { ideal: 0.5 },
-        // @ts-ignore - some browsers support this
-        advanced: [{ zoom: 0.5 }],
+        advanced: [{ zoom: 0.5 } as any],
       };
     }
-    // Normal 1x
-    return {
-      facingMode: { ideal: "environment" },
-      width: { ideal: 1920 },
-      height: { ideal: 1080 },
-    };
+    return base;
   }, []);
 
   const startCameraWithLens = useCallback(async (lens: LensMode) => {
-    // Stop existing stream
     cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
     cameraStreamRef.current = null;
 
@@ -73,7 +98,7 @@ export default function Assistant() {
 
       cameraStreamRef.current = stream;
 
-      // Try to apply zoom via track capabilities
+      // Apply zoom via track capabilities
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack) {
         try {
@@ -88,8 +113,12 @@ export default function Assistant() {
             });
           }
         } catch {
-          // Zoom not supported on this device, continue with default
+          // Zoom not supported
         }
+
+        // Log actual resolution
+        const settings = videoTrack.getSettings();
+        console.log(`Camera: ${settings.width}x${settings.height} @ ${settings.frameRate}fps`);
       }
 
       if (videoRef.current) {
@@ -115,7 +144,7 @@ export default function Assistant() {
     setSwitchingLens(false);
   }, [lensMode, cameraReady, startCameraWithLens]);
 
-  // ===== AUTO-START CAMERA ON MOUNT =====
+  // ===== AUTO-START CAMERA ON MOUNT (4K) =====
   useEffect(() => {
     let cancelled = false;
 
@@ -124,8 +153,9 @@ export default function Assistant() {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: "environment" },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
+            width: { ideal: 3840, min: 1920 },
+            height: { ideal: 2160, min: 1080 },
+            frameRate: { ideal: 30, max: 60 },
           },
           audio: false,
         });
@@ -161,6 +191,113 @@ export default function Assistant() {
     };
   }, []);
 
+  // ===== AUTO-SCAN: CONTINUOUS OCR WITH DEDUP =====
+  const captureFrameForDiff = useCallback((): { data: Uint8ClampedArray; base64: string } | null => {
+    if (!videoRef.current || !diffCanvasRef.current) return null;
+    const video = videoRef.current;
+    const canvas = diffCanvasRef.current;
+
+    // Use full video resolution for OCR quality
+    const w = video.videoWidth || 3840;
+    const h = video.videoHeight || 2160;
+    canvas.width = w;
+    canvas.height = h;
+
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+
+    ctx.drawImage(video, 0, 0, w, h);
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const base64 = canvas.toDataURL("image/jpeg", 0.92).split(",")[1];
+
+    return { data: imageData.data, base64 };
+  }, []);
+
+  const processFrameIfChanged = useCallback(async () => {
+    if (isProcessingRef.current) return; // Skip if already processing
+
+    const frame = captureFrameForDiff();
+    if (!frame) return;
+
+    const { data, base64 } = frame;
+
+    // Check if frame changed significantly
+    if (prevFrameDataRef.current) {
+      // Sample every 20th pixel for speed
+      const diff = computeFrameDiff(prevFrameDataRef.current, data, 20);
+      if (diff < 8) {
+        // Frame hasn't changed enough, skip
+        return;
+      }
+    }
+
+    // Simple hash to avoid reprocessing same content
+    // Use a lightweight hash of sampled pixels
+    let hash = 0;
+    for (let i = 0; i < data.length; i += 400) {
+      hash = ((hash << 5) - hash + data[i]) | 0;
+    }
+    const hashStr = hash.toString();
+
+    if (hashStr === lastProcessedHashRef.current) {
+      return; // Same content, skip
+    }
+
+    // Frame changed! Process it
+    prevFrameDataRef.current = new Uint8ClampedArray(data);
+    lastProcessedHashRef.current = hashStr;
+    isProcessingRef.current = true;
+    setCameraProcessing(true);
+    setScanStatus("Mudança detectada...");
+
+    try {
+      const result = await processImage.mutateAsync({
+        imageBase64: base64,
+        context: previousContextRef.current || undefined,
+      });
+
+      setResult({
+        transcription: "",
+        translation: "",
+        answer: result.answer,
+        summaryPtBr: result.summaryPtBr,
+      });
+      setScanStatus("✓ Atualizado");
+    } catch (err: any) {
+      console.error("Auto-scan error:", err);
+      setScanStatus("Erro, tentando...");
+    } finally {
+      isProcessingRef.current = false;
+      setCameraProcessing(false);
+    }
+  }, [captureFrameForDiff]);
+
+  // Start/stop auto-scan interval
+  useEffect(() => {
+    if (autoScan && cameraReady) {
+      setScanStatus("Monitorando...");
+      // Check for changes every 2 seconds
+      autoScanIntervalRef.current = setInterval(() => {
+        processFrameIfChanged();
+      }, 2000);
+    } else {
+      if (autoScanIntervalRef.current) {
+        clearInterval(autoScanIntervalRef.current);
+        autoScanIntervalRef.current = null;
+      }
+      setScanStatus("");
+      prevFrameDataRef.current = null;
+      lastProcessedHashRef.current = "";
+    }
+
+    return () => {
+      if (autoScanIntervalRef.current) {
+        clearInterval(autoScanIntervalRef.current);
+        autoScanIntervalRef.current = null;
+      }
+    };
+  }, [autoScan, cameraReady, processFrameIfChanged]);
+
   // ===== AUDIO RECORDING =====
   const startRecording = useCallback(async () => {
     try {
@@ -174,15 +311,9 @@ export default function Assistant() {
       });
 
       let mimeType = "audio/webm;codecs=opus";
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = "audio/webm";
-      }
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = "audio/mp4";
-      }
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = "";
-      }
+      if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = "audio/webm";
+      if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = "audio/mp4";
+      if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = "";
 
       const options: MediaRecorderOptions = {};
       if (mimeType) options.mimeType = mimeType;
@@ -208,7 +339,7 @@ export default function Assistant() {
       setIsRecording(true);
     } catch (err: any) {
       console.error("Mic error:", err);
-      setError("Erro ao acessar microfone. Verifique permissões.");
+      setError("Erro ao acessar microfone.");
     }
   }, []);
 
@@ -235,8 +366,8 @@ export default function Assistant() {
       const reader = new FileReader();
       const base64 = await new Promise<string>((resolve, reject) => {
         reader.onloadend = () => {
-          const result = reader.result as string;
-          resolve(result.split(",")[1]);
+          const r = reader.result as string;
+          resolve(r.split(",")[1]);
         };
         reader.onerror = reject;
         reader.readAsDataURL(blob);
@@ -262,26 +393,26 @@ export default function Assistant() {
       );
     } catch (err: any) {
       console.error("Process error:", err);
-      setError("Erro ao processar áudio. Tente novamente.");
+      setError("Erro ao processar áudio.");
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // ===== CAMERA CAPTURE =====
+  // ===== MANUAL CAMERA CAPTURE =====
   const captureAndProcess = useCallback(async () => {
-    if (!videoRef.current || !canvasRef.current) return;
+    if (!videoRef.current || !diffCanvasRef.current) return;
     setCameraProcessing(true);
     setError("");
 
     const video = videoRef.current;
-    const canvas = canvasRef.current;
-    canvas.width = video.videoWidth || 1280;
-    canvas.height = video.videoHeight || 720;
+    const canvas = diffCanvasRef.current;
+    canvas.width = video.videoWidth || 3840;
+    canvas.height = video.videoHeight || 2160;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.drawImage(video, 0, 0);
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
     const base64 = dataUrl.split(",")[1];
 
     try {
@@ -312,6 +443,13 @@ export default function Assistant() {
     }
   };
 
+  // Cleanup
+  useEffect(() => {
+    return () => {
+      if (autoScanIntervalRef.current) clearInterval(autoScanIntervalRef.current);
+    };
+  }, []);
+
   return (
     <div className="min-h-screen bg-black text-white flex flex-col" style={{ minHeight: "100dvh" }}>
       {/* Top bar */}
@@ -338,10 +476,16 @@ export default function Assistant() {
               REC
             </span>
           )}
-          {isProcessing && (
+          {(isProcessing || cameraProcessing) && (
             <span className="inline-flex items-center gap-1 text-[10px] font-mono text-cyan">
               <Loader2 className="w-3 h-3 animate-spin" />
               AI
+            </span>
+          )}
+          {autoScan && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-mono text-green-400">
+              <Scan className="w-3 h-3" />
+              AUTO
             </span>
           )}
         </div>
@@ -395,7 +539,7 @@ export default function Assistant() {
         </div>
       )}
 
-      {/* ===== CAMERA PREVIEW ===== */}
+      {/* ===== CAMERA PREVIEW (4K VIDEO) ===== */}
       <div className="flex-1 relative bg-black">
         <video
           ref={videoRef}
@@ -404,7 +548,9 @@ export default function Assistant() {
           muted
           className={`w-full h-full object-cover absolute inset-0 ${cameraReady ? "opacity-100" : "opacity-0"}`}
         />
+        {/* Hidden canvases for processing */}
         <canvas ref={canvasRef} className="hidden" />
+        <canvas ref={diffCanvasRef} className="hidden" />
 
         {/* Lens switching overlay */}
         {switchingLens && (
@@ -413,7 +559,7 @@ export default function Assistant() {
           </div>
         )}
 
-        {/* ===== LENS SELECTOR (0.5x / 1x) ===== */}
+        {/* ===== LENS SELECTOR + AUTO-SCAN ===== */}
         {cameraReady && (
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2 z-10">
             <button
@@ -438,10 +584,28 @@ export default function Assistant() {
             >
               1x
             </button>
+            {/* Auto-scan toggle */}
+            <button
+              onClick={() => setAutoScan((v) => !v)}
+              className={`w-11 h-11 rounded-full flex items-center justify-center font-mono text-[9px] font-bold transition-all ${
+                autoScan
+                  ? "bg-green-500 text-black scale-110"
+                  : "bg-black/60 text-white/70 border border-white/30 hover:border-white/60"
+              }`}
+            >
+              {autoScan ? <Scan className="w-4 h-4" /> : <ScanLine className="w-4 h-4" />}
+            </button>
           </div>
         )}
 
-        {/* Capture button */}
+        {/* Scan status */}
+        {autoScan && scanStatus && (
+          <div className="absolute top-2 left-2 bg-black/70 rounded px-2 py-0.5 z-10">
+            <p className="text-green-400 text-[10px] font-mono">{scanStatus}</p>
+          </div>
+        )}
+
+        {/* Manual capture button */}
         {cameraReady && (
           <button
             onClick={captureAndProcess}
@@ -499,6 +663,7 @@ export default function Assistant() {
             cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
             cameraStreamRef.current = null;
             setCameraReady(false);
+            setAutoScan(false);
           } : () => startCameraWithLens(lensMode)}
           className={`w-12 h-12 rounded-full flex items-center justify-center border transition-all ${
             cameraReady
@@ -535,6 +700,8 @@ export default function Assistant() {
             setResult(null);
             setPreviousContext("");
             setError("");
+            prevFrameDataRef.current = null;
+            lastProcessedHashRef.current = "";
           }}
           className="w-12 h-12 rounded-full flex items-center justify-center border border-white/20 text-white/40 hover:border-white/40 transition-all"
         >
