@@ -66,7 +66,6 @@ export default function Assistant() {
   const transcribeAudioOnly = trpc.transcribeAudioOnly.useMutation();
   const analyzeAndRespond = trpc.analyzeAndRespond.useMutation();
   const processAudioFast = trpc.processAudioFast.useMutation();
-  const processAudioUltraFast = trpc.processAudioUltraFast.useMutation();
   const processImageFast = trpc.processImageFast.useMutation();
 
   // ===== FORCE LANDSCAPE =====
@@ -241,29 +240,44 @@ export default function Assistant() {
         ctx = `[CANDIDATE_VOICE_SAMPLE: "${voiceSampleRef.current}"]\n${ctx}`;
       }
 
-      // ULTRA-FAST: Transcribe + Translate + Respond in ONE call
-      const data = await processAudioUltraFast.mutateAsync({
+      // STEP 1: Transcribe only
+      const transcribeData = await transcribeAudioOnly.mutateAsync({
         audioBase64: base64,
         mimeType: cleanMime,
+      });
+      const transcription = transcribeData.transcription;
+      
+      // Show transcription immediately
+      setResult(prev => ({
+        transcription,
+        translation: prev?.translation || "",
+        answer: prev?.answer || "",
+        summaryPtBr: prev?.summaryPtBr || "",
+      }));
+      setSpeakerInfo("📝 Transcrevendo...");
+
+      // STEP 2: Analyze and respond
+      const analyzeData = await analyzeAndRespond.mutateAsync({
+        transcription,
         previousContext: ctx || undefined,
       });
-      // Show everything immediately
-      if (data.transcription && data.answer) {
-        setResult({
-          transcription: data.transcription,
-          translation: data.translation,
-          answer: data.answer,
-          summaryPtBr: data.summaryPtBr,
-        });
+      const data = analyzeData;
+
+      if (data.isQuestion && data.answer) {
+        setResult({ transcription, translation: data.translation, answer: data.answer, summaryPtBr: data.summaryPtBr });
         setPreviousContext(prev => {
           const newCtx = prev
-            ? `${prev}\nQ: ${data.transcription}\nA: ${data.answer}`
-            : `Q: ${data.transcription}\nA: ${data.answer}`;
+            ? `${prev}\nQ: ${transcription}\nA: ${data.answer}`
+            : `Q: ${transcription}\nA: ${data.answer}`;
+          // Keep context manageable
           const lines = newCtx.split("\n");
           return lines.length > 20 ? lines.slice(-20).join("\n") : newCtx;
         });
-        setSpeakerInfo("🎤 Pergunta");
+        setSpeakerInfo("🎤 Pergunta do Entrevistador");
         setAudioStatus("✓");
+      } else if (!data.isQuestion) {
+        setSpeakerInfo("👤 Resposta do Candidato (ignorada)");
+        setAudioStatus("Ouvindo...");
       } else {
         setAudioStatus("Ouvindo...");
         setSpeakerInfo("");
@@ -309,13 +323,13 @@ export default function Assistant() {
 
       startNewRecorder();
 
-      // 10ms chunks for REAL-TIME streaming
+      // 1-second chunks for ULTRA maximum speed
       audioIntervalRef.current = setInterval(() => {
         if (mediaRecorderRef.current?.state === "recording") {
           mediaRecorderRef.current.stop();
         }
-        setTimeout(() => startNewRecorder(), 5);
-      }, 10);
+        setTimeout(() => startNewRecorder(), 50);
+      }, 1000);
 
       setAudioActive(true);
       setAudioStatus("Ouvindo...");
