@@ -66,6 +66,7 @@ export default function Assistant() {
   const transcribeAudioOnly = trpc.transcribeAudioOnly.useMutation();
   const analyzeAndRespond = trpc.analyzeAndRespond.useMutation();
   const processAudioFast = trpc.processAudioFast.useMutation();
+  const processAudioUltraFast = trpc.processAudioUltraFast.useMutation();
   const processImageFast = trpc.processImageFast.useMutation();
 
   // ===== FORCE LANDSCAPE =====
@@ -240,44 +241,29 @@ export default function Assistant() {
         ctx = `[CANDIDATE_VOICE_SAMPLE: "${voiceSampleRef.current}"]\n${ctx}`;
       }
 
-      // STEP 1: Transcribe only
-      const transcribeData = await transcribeAudioOnly.mutateAsync({
+      // ULTRA-FAST: Transcribe + Translate + Respond in ONE call
+      const data = await processAudioUltraFast.mutateAsync({
         audioBase64: base64,
         mimeType: cleanMime,
-      });
-      const transcription = transcribeData.transcription;
-      
-      // Show transcription immediately
-      setResult(prev => ({
-        transcription,
-        translation: prev?.translation || "",
-        answer: prev?.answer || "",
-        summaryPtBr: prev?.summaryPtBr || "",
-      }));
-      setSpeakerInfo("📝 Transcrevendo...");
-
-      // STEP 2: Analyze and respond
-      const analyzeData = await analyzeAndRespond.mutateAsync({
-        transcription,
         previousContext: ctx || undefined,
       });
-      const data = analyzeData;
-
-      if (data.isQuestion && data.answer) {
-        setResult({ transcription, translation: data.translation, answer: data.answer, summaryPtBr: data.summaryPtBr });
+      // Show everything immediately
+      if (data.transcription && data.answer) {
+        setResult({
+          transcription: data.transcription,
+          translation: data.translation,
+          answer: data.answer,
+          summaryPtBr: data.summaryPtBr,
+        });
         setPreviousContext(prev => {
           const newCtx = prev
-            ? `${prev}\nQ: ${transcription}\nA: ${data.answer}`
-            : `Q: ${transcription}\nA: ${data.answer}`;
-          // Keep context manageable
+            ? `${prev}\nQ: ${data.transcription}\nA: ${data.answer}`
+            : `Q: ${data.transcription}\nA: ${data.answer}`;
           const lines = newCtx.split("\n");
           return lines.length > 20 ? lines.slice(-20).join("\n") : newCtx;
         });
-        setSpeakerInfo("🎤 Pergunta do Entrevistador");
+        setSpeakerInfo("🎤 Pergunta");
         setAudioStatus("✓");
-      } else if (!data.isQuestion) {
-        setSpeakerInfo("👤 Resposta do Candidato (ignorada)");
-        setAudioStatus("Ouvindo...");
       } else {
         setAudioStatus("Ouvindo...");
         setSpeakerInfo("");

@@ -48,3 +48,8 @@
 - [x] Desabilitar descarte de candidato — transcrever TUDO em tempo real
 - [x] Auto-reset após 5 segundos de silêncio — limpa tela e reinicia captura
 - [x] Análise inteligente de speaker — identifica pergunta vs resposta, só responde pergunta
+- [x] Esquecer reconhecimento de voz do candidato
+- [x] Tradução em tempo real em menos de 1 segundo
+- [x] Captar áudio e processar simultaneamente
+- [x] Gerar resposta instantaneamente enquanto ouve
+- [x] Tudo em paralelo: captura + transcrição + tradução + resposta
