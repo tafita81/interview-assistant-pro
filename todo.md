@@ -52,3 +52,10 @@
 - [x] Corrigir erros TypeScript: remover referências a summaryPtBr
 - [x] Criar testes vitest para validar pipeline de transcrição + tradução + resposta
 - [x] Todos os 16 testes passando
+- [x] CORRECAO: Aumentar chunks de audio de 1s para 2s para captura confiavel
+- [x] CORRECAO: Aumentar limite minimo de blob de 100 bytes para 1KB
+- [x] Criar testes de integracao para validar pipeline completo
+- [x] Todos os 7 testes de integracao passando
+- [x] VALIDADO: Transcrição, tradução e resposta funcionando em tempo real
+- [x] VALIDADO: Layout correto (Resposta -> Transcrição -> Tradução)
+- [x] VALIDADO: Sem filtro de speaker - TODO audio é processado

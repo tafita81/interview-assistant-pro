@@ -219,7 +219,8 @@ export default function Assistant() {
 
   // ===== CONTINUOUS AUDIO (2-second chunks) =====
   const processAudioChunk = useCallback(async (blob: Blob, mimeType: string) => {
-    if (blob.size < 500) return;
+    // Aceitar chunks com pelo menos 1KB (áudio válido)
+    if (blob.size < 1000) return;
     if (isProcessingAudioRef.current) return;
     isProcessingAudioRef.current = true;
     setIsProcessingAudio(true);
@@ -240,19 +241,26 @@ export default function Assistant() {
       }
 
       // STEP 1: Transcribe only
+      console.log("📝 Enviando para transcrição...", { blobSize: blob.size, mimeType: cleanMime });
       const transcribeData = await transcribeAudioOnly.mutateAsync({
         audioBase64: base64,
         mimeType: cleanMime,
       });
       const transcription = transcribeData.transcription;
+      console.log("✅ Transcrição recebida:", transcription);
       
       // Show transcription immediately
-      setResult(prev => ({
-        transcription,
-        translation: prev?.translation || "",
-        answer: prev?.answer || "",
-      }));
-      setSpeakerInfo("📝 Transcrevendo...");
+      if (transcription) {
+        setResult(prev => ({
+          transcription,
+          translation: prev?.translation || "",
+          answer: prev?.answer || "",
+        }));
+        setSpeakerInfo("📝 Transcrevendo...");
+        console.log("📺 Transcrição exibida na tela");
+      } else {
+        console.warn("⚠️ Transcrição vazia");
+      }
 
       // STEP 2: Analyze and respond
       const analyzeData = await analyzeAndRespond.mutateAsync({
@@ -277,7 +285,9 @@ export default function Assistant() {
         setAudioStatus("Ouvindo...");
         setSpeakerInfo("");
       }
-    } catch {
+    } catch (err) {
+      console.error("❌ Erro processando áudio:", err);
+      setError(`Erro: ${err instanceof Error ? err.message : 'Desconhecido'}`);
       setAudioStatus("Erro");
     } finally {
       isProcessingAudioRef.current = false;
@@ -317,14 +327,15 @@ export default function Assistant() {
       };
 
       startNewRecorder();
+      console.log("Gravador iniciado, capturando chunks de 1 segundo");
 
-      // 1-second chunks for ULTRA maximum speed
+      // 2-second chunks for reliable transcription
       audioIntervalRef.current = setInterval(() => {
         if (mediaRecorderRef.current?.state === "recording") {
           mediaRecorderRef.current.stop();
         }
         setTimeout(() => startNewRecorder(), 50);
-      }, 1000);
+      }, 2000);
 
       setAudioActive(true);
       setAudioStatus("Ouvindo...");
