@@ -28,3 +28,7 @@
 - [x] BUG: Câmera ocupa tela toda — deve ser miniatura pequena no canto superior direito, restante para respostas/transcrições
 - [x] Layout landscape: forçar tela cheia horizontal ao abrir no Chrome
 - [x] Botão para forçar ultra wide na miniatura da câmera
+- [x] BUG: Áudio e vídeo devem captar em tempo real automaticamente ao entrar na tela (sem botão de gravar)
+- [x] Áudio contínuo: transcreve em tempo real, traduz PT-BR, gera resposta — tudo automático
+- [x] Remover botão de gravar — tudo é plug and play
+- [x] Auto-scan de câmera já ativo por padrão ao entrar
