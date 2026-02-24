@@ -53,27 +53,26 @@ export const appRouter = router({
     }))
     .mutation(async ({ input }) => {
       if (input.transcription.length < 3) {
-        return { speaker: "silence" as const, translation: "", answer: "", summaryPtBr: "" };
+        return { isQuestion: false, translation: "", answer: "", summaryPtBr: "" };
       }
 
       const result = await invokeLLM({
         messages: [
           {
             role: "system",
-            content: `You analyze interview transcriptions. Identify the speaker, then respond ONLY if it's the interviewer asking.
+            content: `You analyze interview transcriptions. Determine if it's a question/prompt or a statement.
 
-SPEAKER IDENTIFICATION:
-- "interviewer": Questions, prompts, follow-ups (e.g. "Tell me about...", "What is...", "How did you...", "Can you explain...")
-- "candidate": Answers, explanations, self-descriptions (e.g. "I worked on...", "My experience...", "I built...")
-- "silence": Empty, noise, or unintelligible
+DETERMINATION:
+- "question": Questions, prompts, follow-ups (Tell me about..., What is..., How did you..., Can you explain..., Describe...)
+- "statement": Answers, explanations, self-descriptions (I worked on..., My experience..., I built..., I achieved...)
 
-IF speaker is "interviewer": provide answer + translation + summary
-IF speaker is "candidate" or "silence": return speaker only, leave other fields empty
+IF it's a question: provide answer + translation + summary
+IF it's a statement: return isQuestion=false, leave other fields empty
 
 Return ONLY valid JSON:
-{"speaker":"interviewer|candidate|silence","answer":"<English answer 2-3 sentences MAX, natural, human, first person, NO question repetition>","translation":"<PT-BR translation of question>","summary":"<1 PT-BR phrase max 12 words>"}
+{"isQuestion":true|false,"answer":"<English answer 2-3 sentences MAX, natural, human, first person, NO question repetition>","translation":"<PT-BR translation of question>","summary":"<1 PT-BR phrase max 12 words>"}
 
-ANSWER RULES (only when speaker=interviewer):
+ANSWER RULES (only if isQuestion=true):
 - English, BRIEF 2-3 sentences MAX, 100% human natural
 - First person ONLY (I, my, we)
 - NO repeating question, NO filler, NO generic phrases
@@ -93,12 +92,12 @@ ${RESUME_CONTEXT_FOR_LLM}`
             schema: {
               type: "object",
               properties: {
-                speaker: { type: "string", description: "interviewer, candidate, or silence" },
+                isQuestion: { type: "boolean", description: "true if question, false if statement" },
                 answer: { type: "string", description: "English answer or empty" },
                 translation: { type: "string", description: "PT-BR translation or empty" },
                 summary: { type: "string", description: "PT-BR summary or empty" },
               },
-              required: ["speaker", "answer", "translation", "summary"],
+              required: ["isQuestion", "answer", "translation", "summary"],
               additionalProperties: false,
             },
           },
@@ -109,18 +108,18 @@ ${RESUME_CONTEXT_FOR_LLM}`
       const raw = typeof content === "string" ? content : "{}";
       try {
         const parsed = JSON.parse(raw);
-        const speaker = parsed.speaker || "silence";
-        if (speaker === "candidate" || speaker === "silence") {
-          return { speaker, translation: "", answer: "", summaryPtBr: "" };
+        const isQuestion = parsed.isQuestion === true;
+        if (!isQuestion) {
+          return { isQuestion: false, translation: "", answer: "", summaryPtBr: "" };
         }
         return {
-          speaker: "interviewer" as const,
+          isQuestion: true,
           translation: parsed.translation || "",
           answer: parsed.answer || "",
           summaryPtBr: parsed.summary || "",
         };
       } catch {
-        return { speaker: "error" as const, translation: "", answer: raw, summaryPtBr: "" };
+        return { isQuestion: false, translation: "", answer: raw, summaryPtBr: "" };
       }
     }),
 
@@ -154,20 +153,19 @@ ${RESUME_CONTEXT_FOR_LLM}`
         messages: [
           {
             role: "system",
-            content: `You analyze interview transcriptions. Identify the speaker, then respond ONLY if it's the interviewer asking.
+            content: `You analyze interview transcriptions. Determine if it's a question/prompt or a statement.
 
-SPEAKER IDENTIFICATION:
-- "interviewer": Questions, prompts, follow-ups (e.g. "Tell me about...", "What is...", "How did you...", "Can you explain...")
-- "candidate": Answers, explanations, self-descriptions (e.g. "I worked on...", "My experience...", "I built...")
-- "silence": Empty, noise, or unintelligible
+DETERMINATION:
+- "question": Questions, prompts, follow-ups (Tell me about..., What is..., How did you..., Can you explain..., Describe...)
+- "statement": Answers, explanations, self-descriptions (I worked on..., My experience..., I built..., I achieved...)
 
-IF speaker is "interviewer": provide answer + translation + summary
-IF speaker is "candidate" or "silence": return speaker only, leave other fields empty
+IF it's a question: provide answer + translation + summary
+IF it's a statement: return isQuestion=false, leave other fields empty
 
 Return ONLY valid JSON:
-{"speaker":"interviewer|candidate|silence","answer":"<English answer 2-3 sentences MAX, natural, human, first person, NO question repetition>","translation":"<PT-BR translation of question>","summary":"<1 PT-BR phrase max 12 words>"}
+{"isQuestion":true|false,"answer":"<English answer 2-3 sentences MAX, natural, human, first person, NO question repetition>","translation":"<PT-BR translation of question>","summary":"<1 PT-BR phrase max 12 words>"}
 
-ANSWER RULES (only when speaker=interviewer):
+ANSWER RULES (only if isQuestion=true):
 - English, BRIEF 2-3 sentences MAX, 100% human natural
 - First person ONLY (I, my, we)
 - NO repeating question, NO filler, NO generic phrases
@@ -187,12 +185,12 @@ ${RESUME_CONTEXT_FOR_LLM}`
             schema: {
               type: "object",
               properties: {
-                speaker: { type: "string", description: "interviewer, candidate, or silence" },
+                isQuestion: { type: "boolean", description: "true if question, false if statement" },
                 answer: { type: "string", description: "English answer or empty" },
                 translation: { type: "string", description: "PT-BR translation or empty" },
                 summary: { type: "string", description: "PT-BR summary or empty" },
               },
-              required: ["speaker", "answer", "translation", "summary"],
+              required: ["isQuestion", "answer", "translation", "summary"],
               additionalProperties: false,
             },
           },

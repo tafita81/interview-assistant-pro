@@ -45,3 +45,6 @@
 - [x] BUG: Respostas muito longas e repetindo a pergunta — deve ser ultra resumida (2-3 frases) em primeira pessoa
 - [x] BUG: Transcrição do entrevistador demorando muito (reduzido para chunks de 1 segundo)
 - [x] BUG: Pipeline corrigido — agora capta TODO áudio, mostra transcrição, DEPOIS filtra speaker, descarta candidato
+- [x] Desabilitar descarte de candidato — transcrever TUDO em tempo real
+- [x] Auto-reset após 5 segundos de silêncio — limpa tela e reinicia captura
+- [x] Análise inteligente de speaker — identifica pergunta vs resposta, só responde pergunta

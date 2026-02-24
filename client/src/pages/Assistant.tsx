@@ -263,7 +263,7 @@ export default function Assistant() {
       });
       const data = analyzeData;
 
-      if (data.speaker === "interviewer" && data.answer) {
+      if (data.isQuestion && data.answer) {
         setResult({ transcription, translation: data.translation, answer: data.answer, summaryPtBr: data.summaryPtBr });
         setPreviousContext(prev => {
           const newCtx = prev
@@ -273,10 +273,10 @@ export default function Assistant() {
           const lines = newCtx.split("\n");
           return lines.length > 20 ? lines.slice(-20).join("\n") : newCtx;
         });
-        setSpeakerInfo("🎤 Entrevistador");
+        setSpeakerInfo("🎤 Pergunta do Entrevistador");
         setAudioStatus("✓");
-      } else if (data.speaker === "candidate") {
-        setSpeakerInfo("👤 Candidato (descartado)");
+      } else if (!data.isQuestion) {
+        setSpeakerInfo("👤 Resposta do Candidato (ignorada)");
         setAudioStatus("Ouvindo...");
       } else {
         setAudioStatus("Ouvindo...");
