@@ -1,36 +1,6 @@
-import { Toaster } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
-import ErrorBoundary from "./components/ErrorBoundary";
-import { ThemeProvider } from "./contexts/ThemeContext";
-import Home from "./pages/Home";
-import Assistant from "./pages/Assistant";
-import TechTest from "./pages/TechTest";
+// NEW INTEGRATED APP WITH ADVANCED ENGINE
+// Imports the new layout with fixed answer, phonetic PT-BR, and audio controls
 
-function Router() {
-  return (
-    <Switch>
-      <Route path={"/"} component={Home} />
-      <Route path={"/assistant"} component={Assistant} />
-      <Route path={"/tech"} component={TechTest} />
-      <Route path={"/404"} component={NotFound} />
-      <Route component={NotFound} />
-    </Switch>
-  );
-}
+import AppNew from './AppNew';
 
-function App() {
-  return (
-    <ErrorBoundary>
-      <ThemeProvider defaultTheme="dark">
-        <TooltipProvider>
-          <Toaster />
-          <Router />
-        </TooltipProvider>
-      </ThemeProvider>
-    </ErrorBoundary>
-  );
-}
-
-export default App;
+export default AppNew;
