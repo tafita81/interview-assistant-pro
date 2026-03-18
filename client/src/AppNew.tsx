@@ -9,14 +9,14 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { startEngine, type EngineAPI, type EngineCallbacks } from "../../core/engine";
+import { toPhoneticPTBR } from "../../frontend/phonetic-converter";
 
 /**
- * NEW INTEGRATED APP WITH REAL AI
- * - Resposta real da IA (não mock)
- * - Transcrição em tempo real
- * - Tradução PT-BR simultânea
- * - Versão fonética para pronúncia
- * - Botão de áudio visível
+ * NEW INTEGRATED APP WITH CONTINUOUS INTERVIEW LOOP
+ * - Resposta fixa no topo (não muda após geração)
+ * - Reset automático após resposta para nova pergunta
+ * - Loop infinito de captura de áudio
+ * - Respostas limitadas a 3-4 linhas (~300 caracteres)
  */
 
 function Router() {
@@ -32,7 +32,7 @@ function Router() {
 }
 
 /**
- * NOVO ASSISTENTE COM ENGINE REAL
+ * NOVO ASSISTENTE COM LOOP CONTÍNUO
  */
 function AssistantNew() {
   const [answer, setAnswer] = useState("");
@@ -43,6 +43,7 @@ function AssistantNew() {
   const [audioLevel, setAudioLevel] = useState(0);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("Pronto para começar");
+  const [questionCount, setQuestionCount] = useState(0);
 
   const engineRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -50,34 +51,14 @@ function AssistantNew() {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
   const previousContextRef = useRef("");
+  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // tRPC mutations
   const transcribeAudioMutation = trpc.transcribeAudioOnly.useMutation();
   const analyzeAndRespondMutation = trpc.analyzeAndRespond.useMutation();
 
-  // Converter texto para fonética PT-BR
-  const toPhoneticPTBR = (text: string): string => {
-    const map = [
-      { regex: /th/g, replace: "d" },
-      { regex: /ing\b/g, replace: "in" },
-      { regex: /er\b/g, replace: "er" },
-      { regex: /a\b/g, replace: "ei" },
-      { regex: /i\b/g, replace: "ai" },
-      { regex: /e\b/g, replace: "i" },
-      { regex: /o\b/g, replace: "ou" },
-      { regex: /u\b/g, replace: "iu" },
-      { regex: /save/gi, replace: "seiv" },
-      { regex: /data/gi, replace: "deita" },
-      { regex: /make/gi, replace: "meik" },
-      { regex: /use/gi, replace: "iuz" },
-    ];
-
-    let result = text;
-    map.forEach((rule) => {
-      result = result.replace(rule.regex, rule.replace);
-    });
-    return result;
-  };
+  // Usar conversor fonético centralizado
+  // (importado de ../../frontend/phonetic-converter)
 
   // Inicializar engine com callbacks
   const initializeEngine = () => {
@@ -91,13 +72,26 @@ function AssistantNew() {
         setStatus("Tradução recebida");
       },
       onAnswer: (text) => {
-        setAnswer(text);
-        setPhoneticPTBR(toPhoneticPTBR(text));
-        setStatus("Resposta gerada");
+        // Garantir que resposta não excede 300 caracteres
+        const truncated = text.length > 300 ? text.substring(0, 300) + "..." : text;
+        setAnswer(truncated);
+        // Converter para fonética PT-BR para pronúncia
+        const phonetic = toPhoneticPTBR(truncated);
+        setPhoneticPTBR(phonetic);
+        setStatus("Resposta gerada ✓");
+        setQuestionCount((prev) => prev + 1);
       },
       onError: (errorMsg) => {
         setError(errorMsg);
         setStatus("Erro ao processar");
+      },
+      onReset: () => {
+        // Reset para próxima pergunta
+        setTranscription("");
+        setTranslation("");
+        setAnswer("");
+        setPhoneticPTBR("");
+        setStatus("Pronto para nova pergunta");
       },
     };
 
@@ -123,15 +117,11 @@ function AssistantNew() {
     engineRef.current = startEngine(callbacks, api, previousContextRef.current);
   };
 
-  // Iniciar captura de áudio
+  // Iniciar captura de áudio com loop contínuo
   const startAudioCapture = async () => {
     try {
       setError("");
       setStatus("Iniciando captura...");
-      setAnswer("");
-      setTranslation("");
-      setTranscription("");
-      setPhoneticPTBR("");
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioStreamRef.current = stream;
@@ -164,12 +154,13 @@ function AssistantNew() {
         }
       };
 
-      // Capturar em chunks de 2 segundos
+      // Capturar em chunks de 2 segundos (LOOP CONTÍNUO)
       mediaRecorderRef.current.start();
       setIsListening(true);
-      setStatus("🎙️ Ouvindo...");
+      setStatus("🎙️ Ouvindo... Fale agora!");
 
-      const interval = setInterval(() => {
+      if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = setInterval(() => {
         if (mediaRecorderRef.current?.state === "recording") {
           mediaRecorderRef.current.stop();
           mediaRecorderRef.current.start();
@@ -188,12 +179,6 @@ function AssistantNew() {
         }
       };
       updateAudioLevel();
-
-      return () => {
-        clearInterval(interval);
-        stream.getTracks().forEach((t) => t.stop());
-        setIsListening(false);
-      };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       setError(`Erro ao capturar áudio: ${errorMsg}`);
@@ -209,6 +194,9 @@ function AssistantNew() {
     if (audioStreamRef.current) {
       audioStreamRef.current.getTracks().forEach((t) => t.stop());
     }
+    if (recordingIntervalRef.current) {
+      clearInterval(recordingIntervalRef.current);
+    }
     setIsListening(false);
     setStatus("Captura parada");
   };
@@ -219,41 +207,32 @@ function AssistantNew() {
 
   return (
     <div className="w-full h-screen bg-black text-white flex flex-col overflow-hidden">
-      {/* RESPOSTA FIXA NO TOPO */}
-      <div
-        id="answer"
-        className="fixed top-0 left-0 right-0 bg-gradient-to-b from-black via-black to-transparent border-b-2 border-cyan-500 p-6 z-50 min-h-32 flex items-center"
-      >
-        <div className="text-2xl font-bold text-cyan-400 leading-relaxed">
+      {/* RESPOSTA FIXA NO TOPO - NÃO MUDA */}
+      <div className="fixed top-0 left-0 right-0 bg-gradient-to-b from-black via-black to-transparent border-b-2 border-cyan-500 p-6 z-50 min-h-28 flex items-center">
+        <div className="text-xl font-bold text-cyan-400 leading-relaxed line-clamp-4">
           {answer || "Aguardando pergunta..."}
         </div>
       </div>
 
       {/* VERSÃO FONÉTICA PT-BR */}
       {phoneticPTBR && (
-        <div
-          id="phonetic"
-          className="fixed top-40 left-0 right-0 bg-black bg-opacity-90 border-b border-yellow-500 p-4 z-40 text-lg text-yellow-400 font-mono max-h-24 overflow-y-auto"
-        >
-          📖 Fonética: {phoneticPTBR}
+        <div className="fixed top-32 left-0 right-0 bg-black bg-opacity-90 border-b border-yellow-500 p-3 z-40 text-sm text-yellow-400 font-mono line-clamp-2">
+          📖 {phoneticPTBR}
         </div>
       )}
 
       {/* TRADUÇÃO PT-BR */}
       {translation && (
-        <div
-          id="question"
-          className="fixed bottom-32 left-0 right-0 bg-black bg-opacity-90 border-t border-green-500 p-4 z-40 text-lg text-green-400"
-        >
-          🇧🇷 Tradução: {translation}
+        <div className="fixed bottom-32 left-0 right-0 bg-black bg-opacity-90 border-t border-green-500 p-3 z-40 text-sm text-green-400 line-clamp-2">
+          🇧🇷 {translation}
         </div>
       )}
 
       {/* CONTEÚDO PRINCIPAL */}
-      <div className="flex-1 pt-56 pb-40 overflow-auto flex flex-col items-center justify-center">
-        <div className="w-full max-w-2xl px-6 space-y-8">
+      <div className="flex-1 pt-40 pb-40 overflow-auto flex flex-col items-center justify-center">
+        <div className="w-full max-w-2xl px-6 space-y-6">
           {/* INDICADOR DE ÁUDIO */}
-          <div className="flex flex-col items-center gap-6">
+          <div className="flex flex-col items-center gap-4">
             <div className="flex items-center justify-center gap-4">
               <button
                 onClick={isListening ? stopAudioCapture : startAudioCapture}
@@ -263,7 +242,7 @@ function AssistantNew() {
                     : "bg-cyan-600 hover:bg-cyan-700"
                 }`}
               >
-                {isListening ? "🔴 PARAR" : "🎙️ INICIAR ÁUDIO"}
+                {isListening ? "🔴 PARAR" : "🎙️ INICIAR"}
               </button>
 
               {/* NÍVEL DE ÁUDIO */}
@@ -278,44 +257,30 @@ function AssistantNew() {
               </div>
             </div>
 
-            {/* STATUS */}
+            {/* STATUS E CONTADOR */}
             <div className="text-center">
               <p className="text-gray-300 text-sm">{status}</p>
+              {questionCount > 0 && (
+                <p className="text-cyan-400 text-xs mt-1">
+                  ✓ {questionCount} pergunta{questionCount !== 1 ? "s" : ""} processada{questionCount !== 1 ? "s" : ""}
+                </p>
+              )}
               {error && <p className="text-red-400 text-sm mt-2">⚠️ {error}</p>}
             </div>
           </div>
 
-          {/* INFORMAÇÕES DE DEBUG */}
-          <div className="bg-gray-900 p-6 rounded-lg border border-gray-700 text-sm text-gray-300 space-y-2 max-h-48 overflow-y-auto">
-            {transcription && (
-              <p>
-                <span className="text-cyan-400">📝 Transcrição:</span> {transcription}
-              </p>
-            )}
-            {translation && (
-              <p>
-                <span className="text-green-400">🇧🇷 Tradução:</span> {translation}
-              </p>
-            )}
-            {answer && (
-              <p>
-                <span className="text-yellow-400">💬 Resposta:</span> {answer}
-              </p>
-            )}
-            {!transcription && !translation && !answer && (
-              <>
-                <p>✅ Engine integrado com tRPC</p>
-                <p>✅ Resposta real da IA (não mock)</p>
-                <p>✅ Transcrição em tempo real</p>
-                <p>✅ Tradução PT-BR simultânea</p>
-                <p>✅ Versão fonética para pronúncia</p>
-              </>
-            )}
+          {/* INFORMAÇÕES */}
+          <div className="bg-gray-900 p-4 rounded-lg border border-gray-700 text-xs text-gray-300 space-y-1">
+            <p>✅ Loop contínuo - fale múltiplas perguntas</p>
+            <p>✅ Resposta fixa (3-4 linhas máximo)</p>
+            <p>✅ Reset automático entre perguntas</p>
+            <p>✅ Tradução PT-BR em tempo real</p>
+            <p>✅ Versão fonética para pronúncia</p>
           </div>
         </div>
       </div>
 
-      {/* RODAPÉ COM CONTROLES */}
+      {/* RODAPÉ */}
       <div className="fixed bottom-0 left-0 right-0 bg-black bg-opacity-95 border-t border-gray-700 p-4 flex justify-between items-center">
         <button
           onClick={() => window.history.back()}
@@ -323,7 +288,7 @@ function AssistantNew() {
         >
           ← Voltar
         </button>
-        <div className="text-xs text-gray-500">Interview Assistant Pro v2.0 - Real AI</div>
+        <div className="text-xs text-gray-500">Interview Assistant Pro v2.1 - Continuous Loop</div>
       </div>
     </div>
   );

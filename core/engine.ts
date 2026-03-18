@@ -1,5 +1,7 @@
-// UNIFIED ENGINE WITH REAL AI
-// Integrates with tRPC backend for real transcription and response generation
+// UNIFIED ENGINE WITH CONTINUOUS INTERVIEW LOOP
+// - Resposta fixa no topo (não muda após geração)
+// - Reset automático após resposta para nova pergunta
+// - Loop infinito de captura de áudio
 
 import { pushChunk } from "../realtime/question-boundary";
 import { updatePrediction } from "../realtime/predictive-engine";
@@ -11,6 +13,7 @@ export interface EngineCallbacks {
   onTranslation?: (text: string) => void;
   onAnswer?: (text: string) => void;
   onError?: (error: string) => void;
+  onReset?: () => void;
 }
 
 export interface EngineAPI {
@@ -25,8 +28,30 @@ export function startEngine(
 ) {
   let lastFullQuestion = "";
   let isProcessing = false;
+  let currentAnswer = "";
+  let answerLocked = false;
+
+  // Reset state para nova pergunta
+  const resetForNewQuestion = () => {
+    lastFullQuestion = "";
+    currentAnswer = "";
+    answerLocked = false;
+    callbacks.onReset?.();
+  };
+
+  // Auto-reset após alguns segundos de inatividade
+  let resetTimeout: NodeJS.Timeout | null = null;
+  const scheduleAutoReset = () => {
+    if (resetTimeout) clearTimeout(resetTimeout);
+    resetTimeout = setTimeout(() => {
+      resetForNewQuestion();
+    }, 8000); // 8 segundos de inatividade
+  };
 
   return async function onAudioChunk(audioBase64: string, mimeType: string = "audio/webm") {
+    // Cancelar auto-reset quando novo áudio chega
+    if (resetTimeout) clearTimeout(resetTimeout);
+
     if (isProcessing) return;
 
     try {
@@ -48,16 +73,32 @@ export function startEngine(
       } catch (error) {
         console.error("Transcription error:", error);
         callbacks.onError?.(`Transcription failed: ${error}`);
+        scheduleAutoReset();
         return;
       }
 
       // 3. Wait for full question boundary
       pushChunk(transcription, async (fullQuestion) => {
-        if (!fullQuestion || fullQuestion === lastFullQuestion) {
+        // Se pergunta é diferente da anterior, resetar resposta anterior
+        if (fullQuestion !== lastFullQuestion && fullQuestion.trim()) {
+          if (lastFullQuestion !== "") {
+            // Nova pergunta detectada, resetar para nova resposta
+            answerLocked = false;
+            currentAnswer = "";
+          }
+          lastFullQuestion = fullQuestion;
+        }
+
+        if (!fullQuestion || !fullQuestion.trim()) {
           return;
         }
 
-        lastFullQuestion = fullQuestion;
+        // Se já temos resposta bloqueada, não processar novamente
+        if (answerLocked) {
+          scheduleAutoReset();
+          return;
+        }
+
         isProcessing = true;
 
         try {
@@ -77,7 +118,11 @@ export function startEngine(
           // 7. Hiring optimization
           answer = optimizeForHiring(answer);
 
-          // 8. Output callbacks
+          // 8. LOCK ANSWER (não muda mais)
+          currentAnswer = answer;
+          answerLocked = true;
+
+          // 9. Output callbacks
           if (translation) {
             callbacks.onTranslation?.(translation);
           }
@@ -87,9 +132,13 @@ export function startEngine(
 
           // Update context for next turn
           previousContext = `Q: ${fullQuestion}\nA: ${answer}`;
+
+          // Schedule auto-reset para próxima pergunta
+          scheduleAutoReset();
         } catch (error) {
           console.error("Analysis error:", error);
           callbacks.onError?.(`Analysis failed: ${error}`);
+          scheduleAutoReset();
         } finally {
           isProcessing = false;
         }
@@ -97,6 +146,7 @@ export function startEngine(
     } catch (error) {
       console.error("Engine error:", error);
       callbacks.onError?.(`Engine error: ${error}`);
+      scheduleAutoReset();
     }
   };
 }

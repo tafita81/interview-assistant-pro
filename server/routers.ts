@@ -62,17 +62,19 @@ export const appRouter = router({
             role: "system",
             content: `You are an interview coach for Rafael Rodrigues. For ANY transcription:
 1. Translate to PT-BR
-2. Generate a brief answer (2-3 sentences MAX) in first person
+2. Generate a VERY BRIEF answer (2-3 sentences MAX, ~300 chars) in first person
 
 Return ONLY valid JSON:
-{"translation":"<PT-BR translation>","answer":"<English answer 2-3 sentences MAX, natural, human, first person>"}
+{"translation":"<PT-BR translation>","answer":"<English answer 2-3 sentences MAX, ~300 chars, simple A2-B1 level, natural, human, first person>"}
 
 ANSWER RULES:
-- English, BRIEF 2-3 sentences MAX, 100% human natural
+- English, BRIEF 2-3 sentences MAX (~300 characters total)
+- Simple vocabulary (A2-B1 level)
 - First person ONLY (I, my, we)
 - NO repeating question, NO filler, NO generic phrases
 - Direct answer with specific metrics from resume
 - Just what Rafael should speak, nothing else
+- MUST fit in 3-4 lines on screen
 
 ${RESUME_CONTEXT_FOR_LLM}`
           },
@@ -101,9 +103,19 @@ ${RESUME_CONTEXT_FOR_LLM}`
       const raw = typeof content === "string" ? content : "{}";
       try {
         const parsed = JSON.parse(raw);
+        // ENFORCE: Answer must be <= 300 characters
+        let answer = (parsed.answer || "").trim();
+        if (answer.length > 300) {
+          // Truncate to last complete sentence within 300 chars
+          answer = answer.substring(0, 300);
+          const lastPeriod = answer.lastIndexOf(".");
+          if (lastPeriod > 100) {
+            answer = answer.substring(0, lastPeriod + 1);
+          }
+        }
         return {
           translation: parsed.translation || "",
-          answer: parsed.answer || "",
+          answer: answer,
         };
       } catch {
         return { translation: "", answer: raw };
@@ -142,17 +154,19 @@ ${RESUME_CONTEXT_FOR_LLM}`
             role: "system",
             content: `You are an interview coach for Rafael Rodrigues. For ANY transcription:
 1. Translate to PT-BR
-2. Generate a brief answer (2-3 sentences MAX) in first person
+2. Generate a VERY BRIEF answer (2-3 sentences MAX, ~300 chars) in first person
 
 Return ONLY valid JSON:
-{"translation":"<PT-BR translation>","answer":"<English answer 2-3 sentences MAX, natural, human, first person>"}
+{"translation":"<PT-BR translation>","answer":"<English answer 2-3 sentences MAX, ~300 chars, simple A2-B1 level, natural, human, first person>"}
 
 ANSWER RULES:
-- English, BRIEF 2-3 sentences MAX, 100% human natural
+- English, BRIEF 2-3 sentences MAX (~300 characters total)
+- Simple vocabulary (A2-B1 level)
 - First person ONLY (I, my, we)
 - NO repeating question, NO filler, NO generic phrases
 - Direct answer with specific metrics from resume
 - Just what Rafael should speak, nothing else
+- MUST fit in 3-4 lines on screen
 
 ${RESUME_CONTEXT_FOR_LLM}`
           },
@@ -181,10 +195,18 @@ ${RESUME_CONTEXT_FOR_LLM}`
       const raw = typeof content === "string" ? content : "";
       try {
         const parsed = JSON.parse(raw);
+        let answer = (parsed.answer || "").trim();
+        if (answer.length > 300) {
+          answer = answer.substring(0, 300);
+          const lastPeriod = answer.lastIndexOf(".");
+          if (lastPeriod > 100) {
+            answer = answer.substring(0, lastPeriod + 1);
+          }
+        }
         return {
           transcription: text,
           translation: parsed.translation || "",
-          answer: parsed.answer || "",
+          answer: answer || "",
         };
       } catch {
         return { transcription: text, translation: "", answer: raw };
