@@ -1,0 +1,17 @@
+{
+  "version": "1.0",
+  "tasks": [
+    {
+      "id": "init-readme",
+      "type": "create_file",
+      "target": "README.md",
+      "status": "pending"
+    },
+    {
+      "id": "docs-setup",
+      "type": "create_folder",
+      "target": "docs",
+      "status": "pending"
+    }
+  ]
+}
