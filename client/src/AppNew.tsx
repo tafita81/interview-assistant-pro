@@ -8,15 +8,15 @@ import TechTest from "./pages/TechTest";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { startEngine, type EngineAPI, type EngineCallbacks } from "../../core/engine";
+import { RealtimeAudioEngine, type RealtimeEngineAPI } from "@/lib/realtime-engine";
 import { toPhoneticPTBR } from "../../frontend/phonetic-converter";
 
 /**
- * NEW LAYOUT: 70% Resposta + 30% Pergunta Traduzida
- * - Botão iniciar muito pequeno na parte de baixo
- * - Sem informações fixas no meio da tela
- * - Resposta em cyan (70% da tela)
- * - Pergunta traduzida em verde (30% da tela)
+ * REALTIME LAYOUT: 70% Resposta + 30% Pergunta Traduzida
+ * - Captura de áudio com chunks de 500-800ms
+ * - Streaming contínuo (sem bloqueios)
+ * - Latência < 2 segundos
+ * - Detecção automática de pergunta completa
  */
 
 function Router() {
@@ -32,113 +32,79 @@ function Router() {
 }
 
 /**
- * NOVO LAYOUT MINIMALISTA
+ * NOVO ASSISTENTE REALTIME
  */
 function AssistantNew() {
   const [answer, setAnswer] = useState("");
   const [translation, setTranslation] = useState("");
+  const [transcription, setTranscription] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [error, setError] = useState("");
+  const [latency, setLatency] = useState(0);
 
-  const engineRef = useRef<any>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const audioStreamRef = useRef<MediaStream | null>(null);
-  const previousContextRef = useRef("");
-  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  // tRPC mutations
+  const engineRef = useRef<RealtimeAudioEngine | null>(null);
   const transcribeAudioMutation = trpc.transcribeAudioOnly.useMutation();
   const analyzeAndRespondMutation = trpc.analyzeAndRespond.useMutation();
 
-  // Inicializar engine com callbacks
+  // Inicializar engine realtime
   const initializeEngine = () => {
-    const callbacks: EngineCallbacks = {
-      onTranscription: () => {
-        // Não mostrar transcrição, apenas processar
+    const callbacks = {
+      onChunkCaptured: (duration: number) => {
+        // Log silencioso
       },
-      onTranslation: (text) => {
-        setTranslation(text);
+      onTranscriptionChunk: (text: string, isFinal: boolean) => {
+        setTranscription(text);
       },
-      onAnswer: (text) => {
-        // Garantir que resposta não excede 300 caracteres
-        const truncated = text.length > 300 ? text.substring(0, 300) : text;
+      onQuestionDetected: (fullQuestion: string) => {
+        // Log silencioso
+      },
+      onAnswerGenerated: (answer: string, translation: string) => {
+        const truncated = answer.length > 300 ? answer.substring(0, 300) : answer;
         setAnswer(truncated);
+        setTranslation(translation);
+        setLatency(0); // Reset latency
       },
-      onError: (errorMsg) => {
+      onError: (errorMsg: string) => {
         setError(errorMsg);
       },
-      onReset: () => {
-        // Reset para próxima pergunta
-        setTranslation("");
-        setAnswer("");
-        setError("");
-      },
     };
 
-    const api: EngineAPI = {
-      transcribeAudioOnly: async (input) => {
+    const api: RealtimeEngineAPI = {
+      transcribeAudioOnly: async (input: { audioBase64: string; mimeType: string }) => {
         return new Promise((resolve, reject) => {
           transcribeAudioMutation.mutate(input, {
-            onSuccess: (data) => resolve(data),
+            onSuccess: (data) => resolve(data as { transcription: string }),
             onError: (err) => reject(err),
           });
         });
       },
-      analyzeAndRespond: async (input) => {
+      analyzeAndRespond: async (input: { transcription: string; previousContext?: string }) => {
         return new Promise((resolve, reject) => {
           analyzeAndRespondMutation.mutate(input, {
-            onSuccess: (data) => resolve(data),
+            onSuccess: (data) => resolve(data as { translation: string; answer: string }),
             onError: (err) => reject(err),
           });
         });
       },
     };
 
-    engineRef.current = startEngine(callbacks, api, previousContextRef.current);
+    engineRef.current = new RealtimeAudioEngine(callbacks, api);
   };
 
-  // Iniciar captura de áudio com loop contínuo
+  // Iniciar captura
   const startAudioCapture = async () => {
     try {
       setError("");
+      setAnswer("");
+      setTranslation("");
+      setTranscription("");
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioStreamRef.current = stream;
-
-      // Setup AudioContext
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext ||
-          (window as any).webkitAudioContext)();
+      if (!engineRef.current) {
+        initializeEngine();
       }
 
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm")
-        ? "audio/webm"
-        : "audio/mp4";
-      mediaRecorderRef.current = new MediaRecorder(stream, { mimeType });
-
-      mediaRecorderRef.current.ondataavailable = async (e) => {
-        if (e.data.size > 0 && engineRef.current) {
-          const reader = new FileReader();
-          reader.onload = async () => {
-            const base64 = (reader.result as string).split(",")[1];
-            await engineRef.current(base64, mimeType);
-          };
-          reader.readAsDataURL(e.data);
-        }
-      };
-
-      // Capturar em chunks de 2 segundos (LOOP CONTÍNUO)
-      mediaRecorderRef.current.start();
+      await engineRef.current?.startCapture();
       setIsListening(true);
-
-      if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
-      recordingIntervalRef.current = setInterval(() => {
-        if (mediaRecorderRef.current?.state === "recording") {
-          mediaRecorderRef.current.stop();
-          mediaRecorderRef.current.start();
-        }
-      }, 2000);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       setError(`Erro: ${errorMsg}`);
@@ -146,16 +112,9 @@ function AssistantNew() {
     }
   };
 
+  // Parar captura
   const stopAudioCapture = () => {
-    if (mediaRecorderRef.current) {
-      mediaRecorderRef.current.stop();
-    }
-    if (audioStreamRef.current) {
-      audioStreamRef.current.getTracks().forEach((t) => t.stop());
-    }
-    if (recordingIntervalRef.current) {
-      clearInterval(recordingIntervalRef.current);
-    }
+    engineRef.current?.stopCapture();
     setIsListening(false);
   };
 
@@ -168,19 +127,19 @@ function AssistantNew() {
       {/* RESPOSTA - 70% DA TELA */}
       <div className="flex-[7] flex items-center justify-center p-8 border-b border-cyan-500 overflow-hidden">
         <div className="text-4xl font-bold text-cyan-400 text-center leading-relaxed line-clamp-6 break-words">
-          {answer || "Aguardando pergunta..."}
+          {answer || (transcription ? "Processando..." : "Aguardando pergunta...")}
         </div>
       </div>
 
       {/* PERGUNTA TRADUZIDA - 30% DA TELA */}
       <div className="flex-[3] flex items-center justify-center p-6 bg-black border-b border-green-500 overflow-hidden">
         <div className="text-xl text-green-400 text-center leading-relaxed line-clamp-4 break-words">
-          {translation ? `🇧🇷 ${translation}` : "Fale uma pergunta..."}
+          {translation ? `🇧🇷 ${translation}` : transcription ? `📝 ${transcription}` : "Fale uma pergunta..."}
         </div>
       </div>
 
-      {/* BOTÃO INICIAR MUITO PEQUENO NA PARTE DE BAIXO */}
-      <div className="flex items-center justify-center gap-3 bg-black border-t border-gray-700 p-2">
+      {/* CONTROLES NA PARTE DE BAIXO */}
+      <div className="flex items-center justify-between gap-3 bg-black border-t border-gray-700 p-2">
         <button
           onClick={isListening ? stopAudioCapture : startAudioCapture}
           className={`px-3 py-1 rounded text-xs font-semibold transition-all ${
@@ -192,11 +151,17 @@ function AssistantNew() {
           {isListening ? "🔴 PARAR" : "🎙️ INICIAR"}
         </button>
 
+        {latency > 0 && (
+          <span className="text-xs text-gray-400">
+            ⚡ {latency}ms
+          </span>
+        )}
+
         {error && <span className="text-red-400 text-xs">{error}</span>}
 
         <button
           onClick={() => window.history.back()}
-          className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs"
+          className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs ml-auto"
         >
           ← Voltar
         </button>
