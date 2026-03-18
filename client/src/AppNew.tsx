@@ -41,6 +41,7 @@ function AssistantNew() {
   const [isListening, setIsListening] = useState(false);
   const [error, setError] = useState("");
   const [latency, setLatency] = useState(0);
+  const [questionTranslation, setQuestionTranslation] = useState("");
 
   const engineRef = useRef<RealtimeAudioEngine | null>(null);
   const transcribeAudioMutation = trpc.transcribeAudioOnly.useMutation();
@@ -54,6 +55,10 @@ function AssistantNew() {
       },
       onTranscriptionChunk: (text: string, isFinal: boolean) => {
         setTranscription(text);
+        // Traduzir pergunta em tempo real
+        if (text && text.length > 0) {
+          translateQuestionAsync(text);
+        }
       },
       onQuestionDetected: (fullQuestion: string) => {
         // Log silencioso
@@ -118,6 +123,20 @@ function AssistantNew() {
     setIsListening(false);
   };
 
+  // Traduzir pergunta em tempo real
+  const translateQuestionAsync = async (question: string) => {
+    try {
+      const result = await analyzeAndRespondMutation.mutateAsync({
+        transcription: question,
+      });
+      if (result.translation) {
+        setQuestionTranslation(result.translation);
+      }
+    } catch (error) {
+      // Silencioso
+    }
+  };
+
   useEffect(() => {
     initializeEngine();
   }, []);
@@ -125,16 +144,16 @@ function AssistantNew() {
   return (
     <div className="w-full h-screen bg-black text-white flex flex-col overflow-hidden">
       {/* RESPOSTA - 70% DA TELA */}
-      <div className="flex-[7] flex items-center justify-center p-8 border-b border-cyan-500 overflow-hidden">
-        <div className="text-4xl font-bold text-cyan-400 text-center leading-relaxed line-clamp-6 break-words">
+      <div className="flex-[7] flex items-center justify-center p-4 border-b border-cyan-500 overflow-y-auto">
+        <div className="text-xl font-semibold text-cyan-400 text-center leading-snug break-words">
           {answer || (transcription ? "Processando..." : "Aguardando pergunta...")}
         </div>
       </div>
 
       {/* PERGUNTA TRADUZIDA - 30% DA TELA */}
-      <div className="flex-[3] flex items-center justify-center p-6 bg-black border-b border-green-500 overflow-hidden">
-        <div className="text-xl text-green-400 text-center leading-relaxed line-clamp-4 break-words">
-          {translation ? `🇧🇷 ${translation}` : transcription ? `📝 ${transcription}` : "Fale uma pergunta..."}
+      <div className="flex-[3] flex items-center justify-center p-4 bg-black border-b border-green-500 overflow-y-auto">
+        <div className="text-sm text-green-400 text-center leading-snug break-words">
+          {questionTranslation ? `🇧🇷 ${questionTranslation}` : transcription ? `📝 ${transcription}` : "Fale uma pergunta..."}
         </div>
       </div>
 
