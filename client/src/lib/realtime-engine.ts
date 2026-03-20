@@ -56,7 +56,15 @@ export class RealtimeAudioEngine {
    */
   async startCapture(): Promise<void> {
     try {
-      this.audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Tentar acessar microfone
+      try {
+        this.audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (micError) {
+        const msg = micError instanceof Error ? micError.message : String(micError);
+        console.error("[RealtimeEngine] Erro ao acessar microfone:", msg);
+        this.callbacks.onError?.(`Microfone não disponível: ${msg}`);
+        throw micError;
+      }
 
       // Setup AudioContext
       if (!this.audioContext) {
@@ -88,7 +96,8 @@ export class RealtimeAudioEngine {
       console.log("[RealtimeEngine] Captura iniciada com chunks de 500-800ms");
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      this.callbacks.onError?.(`Erro ao capturar áudio: ${msg}`);
+      console.error("[RealtimeEngine] Erro fatal:", msg);
+      this.callbacks.onError?.(`Erro ao iniciar captura: ${msg}`);
       throw error;
     }
   }

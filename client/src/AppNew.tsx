@@ -145,8 +145,16 @@ function AssistantNew() {
     <div className="w-full h-screen bg-black text-white flex flex-col overflow-hidden">
       {/* RESPOSTA - 70% DA TELA */}
       <div className="flex-[7] flex items-center justify-center p-4 border-b border-cyan-500 overflow-y-auto">
-        <div className="text-xl font-semibold text-cyan-400 text-center leading-snug break-words">
-          {answer || (transcription ? "Processando..." : "Aguardando pergunta...")}
+        <div className="text-xl font-semibold text-center leading-snug break-words">
+          {error ? (
+            <span className="text-red-400">{error}</span>
+          ) : answer ? (
+            <span className="text-cyan-400">{answer}</span>
+          ) : transcription ? (
+            <span className="text-yellow-400">Processando...</span>
+          ) : (
+            <span className="text-gray-500">Aguardando pergunta...</span>
+          )}
         </div>
       </div>
 
