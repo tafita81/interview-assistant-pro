@@ -18,22 +18,10 @@ import { RealtimeAudioEngine, type RealtimeEngineAPI } from "@/lib/realtime-engi
  * - Detecção automática de pergunta completa
  */
 
-function Router() {
-  return (
-    <Switch>
-      <Route path={"/"} component={Home} />
-      <Route path={"/assistant"} component={AssistantNew} />
-      <Route path={"/tech"} component={TechTest} />
-      <Route path={"/404"} component={NotFound} />
-      <Route component={NotFound} />
-    </Switch>
-  );
-}
-
 /**
- * NOVO ASSISTENTE REALTIME
+ * PÁGINA DO ASSISTENTE (sem Router)
  */
-function AssistantNew() {
+function AssistantPage() {
   const [answer, setAnswer] = useState("");
   const [questionTranslation, setQuestionTranslation] = useState("");
   const [transcription, setTranscription] = useState("");
@@ -46,6 +34,8 @@ function AssistantNew() {
 
   // Inicializar engine realtime
   const initializeEngine = () => {
+    if (engineRef.current) return; // Evitar múltiplas instâncias
+    
     const callbacks = {
       onChunkCaptured: (duration: number) => {
         // Log silencioso
@@ -111,9 +101,7 @@ function AssistantNew() {
     setIsListening(true);
 
     try {
-      if (!engineRef.current) {
-        initializeEngine();
-      }
+      initializeEngine();
       await engineRef.current?.startCapture();
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
@@ -128,96 +116,11 @@ function AssistantNew() {
     setIsListening(false);
   };
 
+  // Cleanup ao desmontar
   useEffect(() => {
-    initializeEngine();
-  }, []);
-
-  return (
-    <ThemeProvider defaultTheme="dark">
-      <TooltipProvider>
-        <ErrorBoundary>
-          <Router />
-          <Toaster />
-        </ErrorBoundary>
-      </TooltipProvider>
-    </ThemeProvider>
-  );
-}
-
-// Componente da página de assistente
-function AssistantPage() {
-  const [answer, setAnswer] = useState("");
-  const [questionTranslation, setQuestionTranslation] = useState("");
-  const [isListening, setIsListening] = useState(false);
-  const [error, setError] = useState("");
-
-  const engineRef = useRef<RealtimeAudioEngine | null>(null);
-  const transcribeAudioMutation = trpc.transcribeAudioOnly.useMutation();
-  const analyzeAndRespondMutation = trpc.analyzeAndRespond.useMutation();
-
-  const initializeEngine = () => {
-    const callbacks = {
-      onChunkCaptured: () => {},
-      onTranscriptionChunk: (text: string) => {
-        setQuestionTranslation(text);
-      },
-      onQuestionDetected: () => {},
-      onAnswerGenerated: (answer: string, translation: string) => {
-        setAnswer(answer);
-        setQuestionTranslation(translation);
-      },
-      onError: (errorMsg: string) => {
-        setError(errorMsg);
-      },
+    return () => {
+      engineRef.current?.stopCapture();
     };
-
-    const api: RealtimeEngineAPI = {
-      transcribeAudioOnly: async (input: { audioBase64: string; mimeType: string }) => {
-        return new Promise((resolve, reject) => {
-          transcribeAudioMutation.mutate(input, {
-            onSuccess: (data) => resolve(data as { transcription: string }),
-            onError: (err) => reject(err),
-          });
-        });
-      },
-      analyzeAndRespond: async (input: { transcription: string; previousContext?: string }) => {
-        return new Promise((resolve, reject) => {
-          analyzeAndRespondMutation.mutate(input, {
-            onSuccess: (data) => resolve(data as { translation: string; answer: string }),
-            onError: (err) => reject(err),
-          });
-        });
-      },
-    };
-
-    engineRef.current = new RealtimeAudioEngine(callbacks, api);
-  };
-
-  const startAudioCapture = async () => {
-    setError("");
-    setAnswer("");
-    setQuestionTranslation("");
-    setIsListening(true);
-
-    try {
-      if (!engineRef.current) {
-        initializeEngine();
-      }
-      await engineRef.current?.startCapture();
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      setError(`Erro ao acessar microfone: ${errorMsg}`);
-      setIsListening(false);
-    }
-  };
-
-  const stopAudioCapture = () => {
-    engineRef.current?.stopCapture();
-    setIsListening(false);
-  };
-
-  useEffect(() => {
-    initializeEngine();
   }, []);
 
   return (
@@ -273,4 +176,33 @@ function AssistantPage() {
   );
 }
 
-export default AssistantNew;
+/**
+ * ROUTER (sem recursão)
+ */
+function Router() {
+  return (
+    <Switch>
+      <Route path={"/"} component={Home} />
+      <Route path={"/assistant"} component={AssistantPage} />
+      <Route path={"/tech"} component={TechTest} />
+      <Route path={"/404"} component={NotFound} />
+      <Route component={NotFound} />
+    </Switch>
+  );
+}
+
+/**
+ * APP ROOT (App shell com providers)
+ */
+export default function AppNew() {
+  return (
+    <ThemeProvider defaultTheme="dark">
+      <TooltipProvider>
+        <ErrorBoundary>
+          <Router />
+          <Toaster />
+        </ErrorBoundary>
+      </TooltipProvider>
+    </ThemeProvider>
+  );
+}
