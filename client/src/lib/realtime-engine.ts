@@ -238,6 +238,7 @@ export class RealtimeAudioEngine {
    */
   private async generateResponseAsync(): Promise<void> {
     const question = this.accumulatedText;
+    console.log("[RealtimeEngine] Iniciando geração de resposta para:", question);
 
     try {
       const result = await this.api.analyzeAndRespond({
@@ -245,6 +246,7 @@ export class RealtimeAudioEngine {
         previousContext: undefined,
       });
 
+      console.log("[RealtimeEngine] Resposta recebida:", result);
       this.callbacks.onAnswerGenerated?.(result.answer, result.translation);
     } catch (error) {
       console.error("[RealtimeEngine] Erro ao gerar resposta:", error);
