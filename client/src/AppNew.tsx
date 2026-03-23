@@ -159,44 +159,43 @@ function AssistantPage() {
 
   return (
     <div className="w-full h-screen bg-black flex flex-col">
-      {/* 70% - RESPOSTA DO CANDIDATO (Cyan) - TOPO */}
-      <div className="flex-1 flex items-center justify-center p-4 border-b border-cyan-500/30 overflow-y-auto">
-        <div className="text-center">
-          {candidateAnswer ? (
-            <p className="text-2xl text-cyan-400 leading-relaxed font-medium">
+      {/* 70% - RESPOSTAS EM CASCATA (Cyan) - TOPO */}
+      <div className="flex-1 flex flex-col items-center justify-start p-4 border-b border-cyan-500/30 overflow-y-auto bg-black">
+        {candidateAnswer ? (
+          <div className="w-full">
+            <p className="text-2xl text-cyan-400 leading-relaxed font-medium text-center">
               {candidateAnswer}
             </p>
-          ) : (
+          </div>
+        ) : (
+          <div className="flex items-center justify-center h-full w-full">
             <p className="text-lg text-gray-500">
               {isListening ? "Gerando resposta..." : "Clique em INICIAR para começar..."}
             </p>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* 30% - PERGUNTA DO RECRUITER (Verde) - ABAIXO */}
-      <div className="flex-0 h-1/3 flex items-center justify-center p-4 border-b border-green-500/30 overflow-y-auto bg-gray-950">
-        <div className="text-center">
+      <div className="h-1/3 flex flex-col items-center justify-center p-4 border-b border-green-500/30 bg-gray-950">
+        <div className="text-center w-full">
           {recruiterQuestion ? (
-            <>
-              <p className="text-xs text-gray-400 mb-2">Pergunta do Recruiter:</p>
-              <p className="text-lg text-green-400 leading-relaxed font-medium">
-                {recruiterQuestion}
-              </p>
-            </>
+            <p className="text-lg text-green-400 leading-relaxed font-medium">
+              {recruiterQuestion}
+            </p>
           ) : (
             <p className="text-sm text-gray-600">
-              {isListening ? "Aguardando pergunta..." : "Pergunta aparecerá aqui"}
+              {isListening ? "Aguardando pergunta..." : "You Tell me."}
             </p>
           )}
         </div>
       </div>
 
       {/* Botões e Controles */}
-      <div className="flex items-center justify-between p-4 gap-2">
+      <div className="flex items-center justify-center p-4 gap-4">
         <button
           onClick={isListening ? stopAudioCapture : startAudioCapture}
-          className={`px-6 py-2 rounded-lg font-semibold text-sm transition ${
+          className={`px-8 py-3 rounded-full font-bold text-base transition ${
             isListening
               ? "bg-red-600 hover:bg-red-700 text-white"
               : "bg-cyan-500 hover:bg-cyan-600 text-black"
@@ -206,7 +205,7 @@ function AssistantPage() {
         </button>
 
         {error && (
-          <p className="text-red-400 text-xs flex-1">{error}</p>
+          <p className="text-red-400 text-xs">{error}</p>
         )}
       </div>
     </div>
