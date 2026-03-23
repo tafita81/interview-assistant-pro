@@ -82,3 +82,11 @@
 - [x] ROI e impacto nos negócios
 - [x] Testar respostas para diferentes tipos de perguntas
 - [x] Validar tom de Senior Analyst
+
+## Nova Feature: Fonética PT-BR nas Respostas
+
+- [x] Adicionar suporte a fonética PT-BR no prompt
+- [x] Incluir pronunciação para palavras difíceis
+- [x] Exemplo: "Five (Faive)", "System (Sistêm)"
+- [x] Validar build e testes
+- [x] Todos 60 testes passando

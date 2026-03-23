@@ -64,9 +64,10 @@ export const appRouter = router({
 
 1. Translate question to PT-BR
 2. Generate SENIOR ANALYST answer (strategic, high-level, value-focused)
+3. Add PT-BR phonetic pronunciation for difficult English words
 
 Return ONLY valid JSON:
-{"translation":"<PT-BR translation>","answer":"<Strategic answer>"}
+{"translation":"<PT-BR translation>","answer":"<Strategic answer with phonetics>"}
 
 RULES:
 - English, BRIEF 2-3 sentences MAX (~300 chars)
@@ -80,6 +81,11 @@ RULES:
 - What matters: outcomes, efficiency gains, cost savings, team impact
 - Use resume details ONLY if relevant to value proposition
 - Must fit 3-4 lines
+- PHONETICS: Add PT-BR pronunciation in parentheses for key words
+  * Example: "Five (Faive)" 
+  * Example: "System (Sistêm)"
+  * Example: "Analysis (Análisis)"
+  * Include phonetics for: numbers, technical terms, difficult pronunciations
 
 REFERENCE:
 ${RESUME_CONTEXT_FOR_LLM}`
@@ -162,9 +168,10 @@ ${RESUME_CONTEXT_FOR_LLM}`
 
 1. Translate question to PT-BR
 2. Generate SENIOR ANALYST answer (strategic, high-level, value-focused)
+3. Add PT-BR phonetic pronunciation for difficult English words
 
 Return ONLY valid JSON:
-{"translation":"<PT-BR translation>","answer":"<Strategic answer>"}
+{"translation":"<PT-BR translation>","answer":"<Strategic answer with phonetics>"}
 
 RULES:
 - English, BRIEF 2-3 sentences MAX (~300 chars)
@@ -178,6 +185,11 @@ RULES:
 - What matters: outcomes, efficiency gains, cost savings, team impact
 - Use resume details ONLY if relevant to value proposition
 - Must fit 3-4 lines
+- PHONETICS: Add PT-BR pronunciation in parentheses for key words
+  * Example: "Five (Faive)" 
+  * Example: "System (Sistêm)"
+  * Example: "Analysis (Análisis)"
+  * Include phonetics for: numbers, technical terms, difficult pronunciations
 
 REFERENCE:
 ${RESUME_CONTEXT_FOR_LLM}`
