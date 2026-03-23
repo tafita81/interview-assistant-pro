@@ -37,6 +37,7 @@ function AssistantPage() {
   const engineRef = useRef<RealtimeAudioEngine | null>(null);
   const transcribeAudioMutation = trpc.transcribeAudioOnly.useMutation();
   const analyzeAndRespondMutation = trpc.analyzeAndRespond.useMutation();
+  const isQuestionMutation = trpc.isQuestion.useMutation();
 
   // Inicializar engine realtime
 
@@ -113,6 +114,20 @@ function AssistantPage() {
             },
             onError: (err) => {
               console.error("[API] analyzeAndRespond erro:", err);
+              reject(err);
+            },
+          });
+        });
+      },
+      isQuestion: async (input: { transcription: string }) => {
+        return new Promise((resolve, reject) => {
+          isQuestionMutation.mutate(input, {
+            onSuccess: (data) => {
+              console.log("[API] isQuestion retornou:", data);
+              resolve(data as { isQuestion: boolean; confidence: number; reason?: string });
+            },
+            onError: (err) => {
+              console.error("[API] isQuestion erro:", err);
               reject(err);
             },
           });

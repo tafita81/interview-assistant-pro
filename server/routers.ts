@@ -81,11 +81,15 @@ RULES:
 - What matters: outcomes, efficiency gains, cost savings, team impact
 - Use resume details ONLY if relevant to value proposition
 - Must fit 3-4 lines
-- PHONETICS: Add PT-BR pronunciation in parentheses for key words
-  * Example: "Five (Faive)" 
-  * Example: "System (Sistêm)"
-  * Example: "Analysis (Análisis)"
-  * Include phonetics for: numbers, technical terms, difficult pronunciations
+- PHONETICS: Add PT-BR pronunciation for ALL key English words (make it very clear how to pronounce)
+  * Format: "word (pronúncia-em-português)"
+  * Example: "I've (Aiv) worked with Python (Paithon) for five (Faiv) years"
+  * Example: "The system (sistêm) analyzes (analiza) data (déita) in real-time (rial-taim)"
+  * Example: "I managed (meneidjd) a team (tim) of ten (tên) people (pipol)"
+  * EVERY technical term, number, and difficult word MUST have phonetics
+  * Make phonetics sound natural as a Brazilian Portuguese speaker would say it
+  * Use: ã, ê, ô, ç for Portuguese sounds
+  * Examples: "analytics (analítikis)", "database (déitabêis)", "architecture (arquitetura)", "performance (perforrmânce)"
 
 REFERENCE:
 ${RESUME_CONTEXT_FOR_LLM}`
@@ -185,11 +189,15 @@ RULES:
 - What matters: outcomes, efficiency gains, cost savings, team impact
 - Use resume details ONLY if relevant to value proposition
 - Must fit 3-4 lines
-- PHONETICS: Add PT-BR pronunciation in parentheses for key words
-  * Example: "Five (Faive)" 
-  * Example: "System (Sistêm)"
-  * Example: "Analysis (Análisis)"
-  * Include phonetics for: numbers, technical terms, difficult pronunciations
+- PHONETICS: Add PT-BR pronunciation for ALL key English words (make it very clear how to pronounce)
+  * Format: "word (pronúncia-em-português)"
+  * Example: "I've (Aiv) worked with Python (Paithon) for five (Faiv) years"
+  * Example: "The system (sistêm) analyzes (analiza) data (déita) in real-time (rial-taim)"
+  * Example: "I managed (meneidjd) a team (tim) of ten (tên) people (pipol)"
+  * EVERY technical term, number, and difficult word MUST have phonetics
+  * Make phonetics sound natural as a Brazilian Portuguese speaker would say it
+  * Use: ã, ê, ô, ç for Portuguese sounds
+  * Examples: "analytics (analítikis)", "database (déitabêis)", "architecture (arquitetura)", "performance (perforrmânce)"
 
 REFERENCE:
 ${RESUME_CONTEXT_FOR_LLM}`

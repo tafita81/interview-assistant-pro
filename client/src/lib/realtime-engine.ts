@@ -17,6 +17,7 @@ export interface RealtimeEngineCallbacks {
 export interface RealtimeEngineAPI {
   transcribeAudioOnly: (input: { audioBase64: string; mimeType: string }) => Promise<{ transcription: string }>;
   analyzeAndRespond: (input: { transcription: string; previousContext?: string }) => Promise<{ translation: string; answer: string }>;
+  isQuestion: (input: { transcription: string }) => Promise<{ isQuestion: boolean; confidence: number; reason?: string }>;
 }
 
 export class RealtimeAudioEngine {
@@ -219,17 +220,43 @@ export class RealtimeAudioEngine {
         this.questionDetected = true;
         this.lastQuestionTime = now;
 
-        console.log("[RealtimeEngine] Pergunta detectada:", this.accumulatedText);
-        this.callbacks.onQuestionDetected?.(this.accumulatedText);
-
-        // Gerar resposta imediatamente
-        this.generateResponseAsync();
+        console.log("[RealtimeEngine] Possível pergunta detectada:", this.accumulatedText);
+        
+        // Validar se é realmente uma pergunta antes de gerar resposta
+        this.validateAndRespond();
 
         // Reset para próxima pergunta
         setTimeout(() => {
           this.resetForNextQuestion();
         }, 100);
       }
+    }
+  }
+
+  /**
+   * Validar se é pergunta legítima e gerar resposta
+   */
+  private async validateAndRespond(): Promise<void> {
+    const text = this.accumulatedText;
+    
+    try {
+      // Chamar API para validar se é pergunta
+      const validation = await this.api.isQuestion({ transcription: text });
+      
+      if (validation.isQuestion && validation.confidence > 60) {
+        console.log("[RealtimeEngine] Pergunta legítima detectada (confidence: " + validation.confidence + ")");
+        this.callbacks.onQuestionDetected?.(text);
+        
+        // Gerar resposta imediatamente
+        this.generateResponseAsync();
+      } else {
+        console.log("[RealtimeEngine] Não é pergunta (confidence: " + validation.confidence + ") - ignorando");
+        // Ignorar e continuar ouvindo
+      }
+    } catch (error) {
+      console.error("[RealtimeEngine] Erro ao validar pergunta:", error);
+      // Fallback: gerar resposta mesmo assim
+      this.generateResponseAsync();
     }
   }
 
