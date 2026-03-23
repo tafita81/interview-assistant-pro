@@ -1,9 +1,9 @@
 /**
- * REALTIME ENGINE - Captura de áudio com streaming contínuo
- * - Chunks de 500-800ms
- * - Transcrição em paralelo (sem await bloqueante)
- * - Detecção rápida de pergunta completa
- * - Resposta em até 2 segundos
+ * REALTIME ENGINE v2 - Buffer contínuo com detecção de silêncio
+ * - Acumula áudio continuamente no buffer
+ * - Detecta silêncio para identificar fim de frase
+ * - Transcreve frase completa quando silêncio é detectado
+ * - Sem perda de palavras
  */
 
 export interface RealtimeEngineCallbacks {
@@ -26,22 +26,15 @@ export class RealtimeAudioEngine {
   private audioStream: MediaStream | null = null;
   private isRecording = false;
 
-  // Fila de processamento
-  private transcriptionQueue: Array<{
-    audioBase64: string;
-    mimeType: string;
-    timestamp: number;
-  }> = [];
-  private isProcessingQueue = false;
+  // Buffer contínuo de áudio
+  private audioBuffer: Blob[] = [];
+  private bufferStartTime = Date.now();
+  private lastAudioTime = Date.now();
+  private silenceThreshold = 1500; // 1.5 segundos de silêncio = fim de frase
 
   // Acumulador de transcrição
   private accumulatedText = "";
-  private lastSilenceTime = Date.now();
-  private silenceThreshold = 1000; // 1 segundo
-
-  // Controle de pergunta
   private questionDetected = false;
-  private lastQuestionTime = 0;
 
   // Callbacks
   private callbacks: RealtimeEngineCallbacks;
@@ -53,261 +46,169 @@ export class RealtimeAudioEngine {
   }
 
   /**
-   * Iniciar captura de áudio com chunks de 500-800ms
+   * Iniciar captura de áudio
    */
-  async startCapture(): Promise<void> {
+  async start(): Promise<void> {
     try {
-      // Tentar acessar microfone
-      try {
-        this.audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      } catch (micError) {
-        const msg = micError instanceof Error ? micError.message : String(micError);
-        console.error("[RealtimeEngine] Erro ao acessar microfone:", msg);
-        this.callbacks.onError?.(`Microfone não disponível: ${msg}`);
-        throw micError;
-      }
+      this.audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this.mediaRecorder = new MediaRecorder(this.audioStream, { mimeType: "audio/webm" });
 
-      // Setup AudioContext
-      if (!this.audioContext) {
-        this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      }
-
-      // MediaRecorder com chunks de 500ms
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : MediaRecorder.isTypeSupported("audio/webm")
-          ? "audio/webm"
-          : "audio/mp4";
-
-      this.mediaRecorder = new MediaRecorder(this.audioStream, { mimeType });
-
-      // Processar cada chunk imediatamente
-      this.mediaRecorder.ondataavailable = async (e) => {
-        if (e.data.size > 0) {
-          this.handleAudioChunk(e.data, mimeType);
+      this.mediaRecorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data.size > 0) {
+          this.handleAudioChunk(event.data);
         }
       };
 
-      this.mediaRecorder.start();
+      this.mediaRecorder.onerror = (event: MediaRecorderErrorEvent) => {
+        const msg = event.error || "Unknown error";
+        console.error("[RealtimeEngine] Erro:", msg);
+        this.callbacks.onError?.(`Erro ao capturar áudio: ${msg}`);
+      };
+
+      this.mediaRecorder.start(100); // Chunks a cada 100ms para detecção rápida de silêncio
       this.isRecording = true;
+      console.log("[RealtimeEngine] Captura iniciada - buffer contínuo");
 
-      // Enviar chunks a cada 500-800ms
-      this.startChunkTimer();
-
-      console.log("[RealtimeEngine] Captura iniciada com chunks de 500-800ms");
+      // Monitorar silêncio
+      this.startSilenceDetection();
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      console.error("[RealtimeEngine] Erro fatal:", msg);
+      console.error("[RealtimeEngine] Erro ao acessar microfone:", msg);
       this.callbacks.onError?.(`Erro ao iniciar captura: ${msg}`);
       throw error;
     }
   }
 
   /**
-   * Timer para enviar chunks regularmente
+   * Processar chunk de áudio
    */
-  private startChunkTimer(): void {
-    const chunkInterval = setInterval(() => {
+  private handleAudioChunk(blob: Blob): void {
+    this.audioBuffer.push(blob);
+    this.lastAudioTime = Date.now();
+    
+    const bufferDuration = (Date.now() - this.bufferStartTime) / 1000;
+    this.callbacks.onChunkCaptured?.(bufferDuration);
+
+    console.log(`[RealtimeEngine] Chunk recebido - buffer: ${bufferDuration.toFixed(1)}s`);
+  }
+
+  /**
+   * Monitorar silêncio e transcrever quando detectado
+   */
+  private startSilenceDetection(): void {
+    const silenceCheckInterval = setInterval(async () => {
       if (!this.isRecording) {
-        clearInterval(chunkInterval);
+        clearInterval(silenceCheckInterval);
         return;
       }
 
-      // Forçar novo chunk
-      if (this.mediaRecorder?.state === "recording") {
-        this.mediaRecorder.stop();
-        this.mediaRecorder.start();
+      const silenceDuration = Date.now() - this.lastAudioTime;
+
+      // Se silêncio > threshold e temos áudio no buffer
+      if (silenceDuration > this.silenceThreshold && this.audioBuffer.length > 0) {
+        console.log(`[RealtimeEngine] Silêncio detectado (${silenceDuration}ms) - transcrevendo buffer...`);
+        
+        // Transcrever buffer completo
+        await this.transcribeBuffer();
+        
+        // Resetar buffer
+        this.audioBuffer = [];
+        this.bufferStartTime = Date.now();
+        this.lastAudioTime = Date.now();
       }
-    }, 650); // 650ms (meio do intervalo 500-800ms)
+    }, 100); // Verificar a cada 100ms
   }
 
   /**
-   * Processar chunk de áudio
+   * Transcrever buffer completo
    */
-  private async handleAudioChunk(blob: Blob, mimeType: string): Promise<void> {
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const base64 = (reader.result as string).split(",")[1];
+  private async transcribeBuffer(): Promise<void> {
+    if (this.audioBuffer.length === 0) return;
 
-      // Adicionar à fila
-      this.transcriptionQueue.push({
-        audioBase64: base64,
-        mimeType,
-        timestamp: Date.now(),
-      });
+    try {
+      // Combinar todos os chunks em um blob
+      const completeBlob = new Blob(this.audioBuffer, { type: "audio/webm" });
+      const reader = new FileReader();
 
-      // Processar fila em paralelo (sem await)
-      this.processQueueAsync();
+      reader.onload = async () => {
+        const base64 = (reader.result as string).split(",")[1];
+        
+        try {
+          // Transcrever
+          const result = await this.api.transcribeAudioOnly({
+            audioBase64: base64,
+            mimeType: "audio/webm",
+          });
 
-      // Atualizar tempo de silêncio
-      this.lastSilenceTime = Date.now();
-      this.callbacks.onChunkCaptured?.(blob.size);
-    };
-    reader.readAsDataURL(blob);
-  }
+          const text = result.transcription.trim();
+          if (text.length > 0) {
+            this.accumulatedText = text;
+            console.log("[RealtimeEngine] Transcrição:", text);
+            this.callbacks.onTranscriptionChunk?.(text, true);
 
-  /**
-   * Processar fila de transcrição em paralelo
-   */
-  private async processQueueAsync(): Promise<void> {
-    if (this.isProcessingQueue || this.transcriptionQueue.length === 0) {
-      return;
-    }
-
-    this.isProcessingQueue = true;
-
-    // Processar todos os items da fila em paralelo
-    const batch = [...this.transcriptionQueue];
-    this.transcriptionQueue = [];
-
-    const promises = batch.map((item) =>
-      this.api
-        .transcribeAudioOnly({
-          audioBase64: item.audioBase64,
-          mimeType: item.mimeType,
-        })
-        .then((result) => {
-          const text = result.transcription?.trim() || "";
-          if (text) {
-            this.handleTranscriptionChunk(text);
+            // Validar se é pergunta
+            await this.validateAndRespond(text);
           }
-        })
-        .catch((error) => {
-          console.error("[RealtimeEngine] Erro na transcrição:", error);
-        })
-    );
+        } catch (error) {
+          console.error("[RealtimeEngine] Erro ao transcrever:", error);
+        }
+      };
 
-    // Não esperar todas as promessas (fire and forget)
-    Promise.all(promises).finally(() => {
-      this.isProcessingQueue = false;
-      // Processar fila novamente se houver items
-      if (this.transcriptionQueue.length > 0) {
-        this.processQueueAsync();
-      }
-    });
-  }
-
-  /**
-   * Processar chunk de transcrição
-   */
-  private handleTranscriptionChunk(text: string): void {
-    // Acumular texto
-    this.accumulatedText += (this.accumulatedText ? " " : "") + text;
-
-    // Callback de transcrição incremental
-    this.callbacks.onTranscriptionChunk?.(this.accumulatedText, false);
-
-    // Detectar fim de pergunta
-    this.detectQuestionEnd();
-  }
-
-  /**
-   * Detectar fim de pergunta
-   */
-  private detectQuestionEnd(): void {
-    const now = Date.now();
-    const silenceDuration = now - this.lastSilenceTime;
-
-    // Critérios para detectar pergunta completa:
-    // 1. Texto termina com "?"
-    // 2. OU silêncio > 1 segundo E texto tem pelo menos 3 palavras
-    const endsWithQuestion = this.accumulatedText.trim().endsWith("?");
-    const hasLongSilence = silenceDuration > this.silenceThreshold;
-    const hasMinimumLength = this.accumulatedText.split(" ").length >= 3;
-
-    if (endsWithQuestion || (hasLongSilence && hasMinimumLength)) {
-      if (!this.questionDetected) {
-        this.questionDetected = true;
-        this.lastQuestionTime = now;
-
-        console.log("[RealtimeEngine] Possível pergunta detectada:", this.accumulatedText);
-        
-        // Validar se é realmente uma pergunta antes de gerar resposta
-        this.validateAndRespond();
-
-        // Reset para próxima pergunta
-        setTimeout(() => {
-          this.resetForNextQuestion();
-        }, 100);
-      }
+      reader.readAsDataURL(completeBlob);
+    } catch (error) {
+      console.error("[RealtimeEngine] Erro ao processar buffer:", error);
     }
   }
 
   /**
-   * Validar se é pergunta legítima e gerar resposta
+   * Validar se é pergunta e gerar resposta
    */
-  private async validateAndRespond(): Promise<void> {
-    const text = this.accumulatedText;
-    
+  private async validateAndRespond(text: string): Promise<void> {
     try {
-      // Chamar API para validar se é pergunta
+      // Validar se é pergunta
       const validation = await this.api.isQuestion({ transcription: text });
-      
+
       if (validation.isQuestion && validation.confidence > 60) {
-        console.log("[RealtimeEngine] Pergunta legítima detectada (confidence: " + validation.confidence + ")");
+        console.log("[RealtimeEngine] Pergunta legítima detectada");
         this.callbacks.onQuestionDetected?.(text);
-        
-        // Gerar resposta imediatamente
-        this.generateResponseAsync();
+
+        // Gerar resposta
+        const response = await this.api.analyzeAndRespond({ transcription: text });
+        console.log("[RealtimeEngine] Resposta gerada:", response.answer);
+        this.callbacks.onAnswerGenerated?.(response.answer, response.translation);
       } else {
-        console.log("[RealtimeEngine] Não é pergunta (confidence: " + validation.confidence + ") - ignorando");
-        // Ignorar e continuar ouvindo
+        console.log("[RealtimeEngine] Não é pergunta - ignorando");
       }
     } catch (error) {
-      console.error("[RealtimeEngine] Erro ao validar pergunta:", error);
-      // Fallback: gerar resposta mesmo assim
-      this.generateResponseAsync();
+      console.error("[RealtimeEngine] Erro ao validar/responder:", error);
     }
-  }
-
-  /**
-   * Gerar resposta (sem await bloqueante)
-   */
-  private async generateResponseAsync(): Promise<void> {
-    const question = this.accumulatedText;
-    console.log("[RealtimeEngine] Iniciando geração de resposta para:", question);
-
-    try {
-      const result = await this.api.analyzeAndRespond({
-        transcription: question,
-        previousContext: undefined,
-      });
-
-      console.log("[RealtimeEngine] Resposta recebida:", result);
-      this.callbacks.onAnswerGenerated?.(result.answer, result.translation);
-    } catch (error) {
-      console.error("[RealtimeEngine] Erro ao gerar resposta:", error);
-      this.callbacks.onError?.(`Erro ao gerar resposta: ${error}`);
-    }
-  }
-
-  /**
-   * Reset para próxima pergunta
-   */
-  private resetForNextQuestion(): void {
-    this.accumulatedText = "";
-    this.questionDetected = false;
-    this.lastSilenceTime = Date.now();
-    this.callbacks.onTranscriptionChunk?.("", true); // Sinal de reset
   }
 
   /**
    * Parar captura
    */
-  stopCapture(): void {
-    if (this.mediaRecorder) {
+  stop(): void {
+    if (this.mediaRecorder && this.isRecording) {
       this.mediaRecorder.stop();
+      this.isRecording = false;
+      
+      if (this.audioStream) {
+        this.audioStream.getTracks().forEach(track => track.stop());
+      }
+
+      console.log("[RealtimeEngine] Captura parada");
     }
-    if (this.audioStream) {
-      this.audioStream.getTracks().forEach((track) => track.stop());
-    }
-    this.isRecording = false;
   }
 
   /**
-   * Obter estado
+   * Resetar para próxima pergunta
    */
-  isActive(): boolean {
-    return this.isRecording;
+  resetForNextQuestion(): void {
+    this.audioBuffer = [];
+    this.accumulatedText = "";
+    this.questionDetected = false;
+    this.bufferStartTime = Date.now();
+    this.lastAudioTime = Date.now();
+    console.log("[RealtimeEngine] Reset para próxima pergunta");
   }
 }
