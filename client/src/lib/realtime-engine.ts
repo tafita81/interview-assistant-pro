@@ -59,8 +59,8 @@ export class RealtimeAudioEngine {
         }
       };
 
-      this.mediaRecorder.onerror = (event: MediaRecorderErrorEvent) => {
-        const msg = event.error || "Unknown error";
+      this.mediaRecorder.onerror = (event: Event) => {
+        const msg = (event as any).error || "Unknown error";
         console.error("[RealtimeEngine] Erro:", msg);
         this.callbacks.onError?.(`Erro ao capturar áudio: ${msg}`);
       };

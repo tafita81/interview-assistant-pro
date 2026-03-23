@@ -187,7 +187,7 @@ function AssistantPage() {
 
     try {
       initializeEngine();
-      await engineRef.current?.startCapture();
+      await engineRef.current?.start();
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       setError(`Erro ao acessar microfone: ${errorMsg}`);
@@ -197,7 +197,7 @@ function AssistantPage() {
 
   // Parar captura
   const stopAudioCapture = () => {
-    engineRef.current?.stopCapture();
+    engineRef.current?.stop();
     setIsListening(false);
     if (silenceTimer) clearTimeout(silenceTimer);
   };
@@ -205,7 +205,7 @@ function AssistantPage() {
   // Cleanup ao desmontar
   useEffect(() => {
     return () => {
-      engineRef.current?.stopCapture();
+      engineRef.current?.stop();
       if (silenceTimer) clearTimeout(silenceTimer);
     };
   }, [silenceTimer]);
