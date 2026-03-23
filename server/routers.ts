@@ -134,6 +134,74 @@ ${RESUME_CONTEXT_FOR_LLM}`
       }
     }),
 
+
+  // STEP 2.5: Detect if transcription is a question (filter out non-questions)
+  isQuestion: publicProcedure
+    .input(z.object({
+      transcription: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      if (input.transcription.length < 3) {
+        return { isQuestion: false, confidence: 0 };
+      }
+
+      const result = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `You are a question detector. Analyze if the given text is a LEGITIMATE INTERVIEW QUESTION or just random speech/noise.
+
+RULES:
+- Return JSON: {"isQuestion": boolean, "confidence": 0-100, "reason": "string"}
+- QUESTION = Something asking for information, opinion, or explanation
+- NOT QUESTION = Greetings, random speech, laughs, filler words, background noise, incomplete thoughts
+- Confidence 0-100: how sure you are
+
+Examples:
+- "What is your experience with Python?" → isQuestion: true, confidence: 95
+- "Tell me about your background" → isQuestion: true, confidence: 90
+- "Um, so like, yeah" → isQuestion: false, confidence: 95
+- "Can you describe your approach?" → isQuestion: true, confidence: 95
+- "Ha ha, nice" → isQuestion: false, confidence: 98`,
+          },
+          { role: "user", content: `Text: "${input.transcription}"
+
+Is this a question?` },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "question_detection",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                isQuestion: { type: "boolean" },
+                confidence: { type: "number", minimum: 0, maximum: 100 },
+                reason: { type: "string" },
+              },
+              required: ["isQuestion", "confidence", "reason"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+
+      try {
+        const content = result.choices[0]?.message?.content;
+        const raw = typeof content === "string" ? content : "{}";
+        const parsed = JSON.parse(raw);
+        return {
+          isQuestion: parsed.isQuestion === true,
+          confidence: parsed.confidence || 0,
+          reason: parsed.reason || "",
+        };
+      } catch (e) {
+        console.error("[isQuestion] Parse error:", e);
+        return { isQuestion: false, confidence: 0, reason: "Parse error" };
+      }
+    }),
+
   // LEGACY: Ultra-fast combined (kept for backward compatibility)
   processAudioFast: publicProcedure
     .input(z.object({
