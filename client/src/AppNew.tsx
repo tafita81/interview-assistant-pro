@@ -41,12 +41,32 @@ function AssistantPage() {
 
   // Inicializar engine realtime
 
+
+  // Pedir permissão de microfone automaticamente
+  const requestMicrophonePermission = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Fechar stream após obter permissão
+      stream.getTracks().forEach(track => track.stop());
+      console.log("[App] Permissão de microfone concedida");
+      return true;
+    } catch (error) {
+      console.error("[App] Erro ao acessar microfone:", error);
+      setError("Permissão de microfone negada. Por favor, ative o microfone nas configurações do navegador.");
+      return false;
+    }
+  };
+
   // Auto-start capture on mount
   useEffect(() => {
     if (!autoStarted) {
-      const timer = setTimeout(() => {
-        startAudioCapture();
-        setAutoStarted(true);
+      const timer = setTimeout(async () => {
+        // Pedir permissão de microfone primeiro
+        const hasPermission = await requestMicrophonePermission();
+        if (hasPermission) {
+          startAudioCapture();
+          setAutoStarted(true);
+        }
       }, 500);
       return () => clearTimeout(timer);
     }
