@@ -32,13 +32,26 @@ function AssistantPage() {
   const [isListening, setIsListening] = useState(false);
   const [error, setError] = useState("");
   const [silenceTimer, setSilenceTimer] = useState<NodeJS.Timeout | null>(null);
+  const [autoStarted, setAutoStarted] = useState(false);
 
   const engineRef = useRef<RealtimeAudioEngine | null>(null);
   const transcribeAudioMutation = trpc.transcribeAudioOnly.useMutation();
   const analyzeAndRespondMutation = trpc.analyzeAndRespond.useMutation();
 
   // Inicializar engine realtime
-  const initializeEngine = () => {
+
+  // Auto-start capture on mount
+  useEffect(() => {
+    if (!autoStarted) {
+      const timer = setTimeout(() => {
+        startAudioCapture();
+        setAutoStarted(true);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [autoStarted]);
+
+    const initializeEngine = () => {
     if (engineRef.current) return;
     
     const callbacks = {
@@ -70,6 +83,11 @@ function AssistantPage() {
         console.log("[Engine] Resposta gerada:", answer);
         const truncated = answer.length > 300 ? answer.substring(0, 300) : answer;
         setCandidateAnswer(truncated);
+        // Auto-restart capture for next question after 3 seconds
+        setTimeout(() => {
+          setRecruiterQuestion("");
+          // Continue listening for next question
+        }, 3000);
       },
       onError: (errorMsg: string) => {
         console.error("[Engine] Erro:", errorMsg);
