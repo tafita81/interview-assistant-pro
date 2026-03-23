@@ -59,3 +59,8 @@
 - [x] VALIDADO: Transcrição, tradução e resposta funcionando em tempo real
 - [x] VALIDADO: Layout correto (Resposta -> Transcrição -> Tradução)
 - [x] VALIDADO: Sem filtro de speaker - TODO audio é processado
+- [ ] CORRECAO: Corrigir layout invertido - resposta 70% topo, pergunta 30% abaixo
+- [ ] CORRECAO: Implementar captura real de áudio do entrevistador
+- [ ] CORRECAO: Transcrever pergunta em tempo real em português
+- [ ] CORRECAO: Gerar resposta com tom 100% humano e objetivo
+- [ ] VALIDAR: Fluxo completo funcionando com áudio real

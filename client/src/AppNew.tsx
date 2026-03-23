@@ -159,31 +159,34 @@ function AssistantPage() {
 
   return (
     <div className="w-full h-screen bg-black flex flex-col">
-      {/* 70% - PERGUNTA DO RECRUITER (Cyan) */}
+      {/* 70% - RESPOSTA DO CANDIDATO (Cyan) - TOPO */}
       <div className="flex-1 flex items-center justify-center p-4 border-b border-cyan-500/30 overflow-y-auto">
         <div className="text-center">
-          {recruiterQuestion ? (
-            <p className="text-lg text-cyan-400 leading-relaxed font-medium">
-              {recruiterQuestion}
+          {candidateAnswer ? (
+            <p className="text-2xl text-cyan-400 leading-relaxed font-medium">
+              {candidateAnswer}
             </p>
           ) : (
             <p className="text-lg text-gray-500">
-              {isListening ? "Aguardando pergunta do recruiter..." : "Clique em INICIAR para começar..."}
+              {isListening ? "Gerando resposta..." : "Clique em INICIAR para começar..."}
             </p>
           )}
         </div>
       </div>
 
-      {/* 30% - RESPOSTA DO CANDIDATO (Verde) */}
-      <div className="flex-1 flex items-center justify-center p-4 border-b border-green-500/30 overflow-y-auto">
+      {/* 30% - PERGUNTA DO RECRUITER (Verde) - ABAIXO */}
+      <div className="flex-0 h-1/3 flex items-center justify-center p-4 border-b border-green-500/30 overflow-y-auto bg-gray-950">
         <div className="text-center">
-          {candidateAnswer ? (
-            <p className="text-sm text-green-400 leading-relaxed">
-              🎤 {candidateAnswer}
-            </p>
+          {recruiterQuestion ? (
+            <>
+              <p className="text-xs text-gray-400 mb-2">Pergunta do Recruiter:</p>
+              <p className="text-lg text-green-400 leading-relaxed font-medium">
+                {recruiterQuestion}
+              </p>
+            </>
           ) : (
             <p className="text-sm text-gray-600">
-              Resposta aparecerá aqui
+              {isListening ? "Aguardando pergunta..." : "Pergunta aparecerá aqui"}
             </p>
           )}
         </div>
