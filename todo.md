@@ -63,4 +63,22 @@
 - [ ] CORRECAO: Implementar captura real de áudio do entrevistador
 - [ ] CORRECAO: Transcrever pergunta em tempo real em português
 - [ ] CORRECAO: Gerar resposta com tom 100% humano e objetivo
-- [ ] VALIDAR: Fluxo completo funcionando com áudio real
+- [x] VALIDAR: Fluxo completo funcionando com áudio real
+
+## Nova Feature: Histórico em Cascata
+
+- [x] Implementar histórico de respostas (array de respostas)
+- [x] Adicionar nova resposta no topo (unshift)
+- [x] Renderizar todas as respostas na área cyan com scroll
+- [x] Testar múltiplas perguntas e respostas
+- [x] Validar que resposta mais nova sempre fica no topo
+
+## Nova Feature: Respostas Estratégicas de Senior Analyst
+
+- [x] Atualizar prompt do LLM para evitar detalhes técnicos
+- [x] Focar em valor, impacto, resultados
+- [x] Análise do todo (visão estratégica)
+- [x] Soft skills e liderança
+- [x] ROI e impacto nos negócios
+- [x] Testar respostas para diferentes tipos de perguntas
+- [x] Validar tom de Senior Analyst

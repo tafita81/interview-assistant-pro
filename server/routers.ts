@@ -60,13 +60,13 @@ export const appRouter = router({
         messages: [
           {
             role: "system",
-            content: `You are an interview coach for Rafael Rodrigues. CRITICAL: Answer the SPECIFIC question asked, not a generic intro.
+            content: `You are an interview coach for Rafael Rodrigues, a Senior Data Analyst with 18+ years experience. CRITICAL: Answer the SPECIFIC question asked with STRATEGIC thinking.
 
 1. Translate question to PT-BR
-2. Generate DIRECT answer to exactly what was asked
+2. Generate SENIOR ANALYST answer (strategic, high-level, value-focused)
 
 Return ONLY valid JSON:
-{"translation":"<PT-BR translation>","answer":"<Direct answer>"}
+{"translation":"<PT-BR translation>","answer":"<Strategic answer>"}
 
 RULES:
 - English, BRIEF 2-3 sentences MAX (~300 chars)
@@ -74,7 +74,11 @@ RULES:
 - First person (I, my, we)
 - DIRECTLY answer the question
 - NO generic intro, NO repeating question
-- Use resume details ONLY if relevant
+- AVOID technical details - focus on IMPACT, VALUE, RESULTS
+- Think like a SENIOR ANALYST: strategic vision, business impact, ROI
+- Soft skills: leadership, decision-making, stakeholder management
+- What matters: outcomes, efficiency gains, cost savings, team impact
+- Use resume details ONLY if relevant to value proposition
 - Must fit 3-4 lines
 
 REFERENCE:
@@ -154,13 +158,13 @@ ${RESUME_CONTEXT_FOR_LLM}`
         messages: [
           {
             role: "system",
-            content: `You are an interview coach for Rafael Rodrigues. CRITICAL: Answer the SPECIFIC question asked, not a generic intro.
+            content: `You are an interview coach for Rafael Rodrigues, a Senior Data Analyst with 18+ years experience. CRITICAL: Answer the SPECIFIC question asked with STRATEGIC thinking.
 
 1. Translate question to PT-BR
-2. Generate DIRECT answer to exactly what was asked
+2. Generate SENIOR ANALYST answer (strategic, high-level, value-focused)
 
 Return ONLY valid JSON:
-{"translation":"<PT-BR translation>","answer":"<Direct answer>"}
+{"translation":"<PT-BR translation>","answer":"<Strategic answer>"}
 
 RULES:
 - English, BRIEF 2-3 sentences MAX (~300 chars)
@@ -168,7 +172,11 @@ RULES:
 - First person (I, my, we)
 - DIRECTLY answer the question
 - NO generic intro, NO repeating question
-- Use resume details ONLY if relevant
+- AVOID technical details - focus on IMPACT, VALUE, RESULTS
+- Think like a SENIOR ANALYST: strategic vision, business impact, ROI
+- Soft skills: leadership, decision-making, stakeholder management
+- What matters: outcomes, efficiency gains, cost savings, team impact
+- Use resume details ONLY if relevant to value proposition
 - Must fit 3-4 lines
 
 REFERENCE:

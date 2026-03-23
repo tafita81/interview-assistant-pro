@@ -9,6 +9,14 @@ type ProcessResult = {
   answer: string;
 };
 
+type AnswerHistory = {
+  id: string;
+  answer: string;
+  transcription: string;
+  translation: string;
+  timestamp: number;
+};
+
 type LensMode = "0.5x" | "1x";
 type CalibrationState = "idle" | "recording" | "done";
 
@@ -26,6 +34,7 @@ export default function Assistant() {
   const [, navigate] = useLocation();
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
   const [result, setResult] = useState<ProcessResult | null>(null);
+  const [answerHistory, setAnswerHistory] = useState<AnswerHistory[]>([]);
   const [previousContext, setPreviousContext] = useState("");
   const [fontSize, setFontSize] = useState(16);
   const [copied, setCopied] = useState(false);
@@ -510,19 +519,28 @@ export default function Assistant() {
 
         {!cameraReady && <video ref={videoRef} autoPlay playsInline muted className="hidden" />}
 
-        {/* ANSWER - TOP */}
-        {result?.answer && (
-          <div className="border-b border-cyan/20 bg-cyan/5 px-4 py-3">
-            <div className="flex items-start justify-between gap-2 mb-1 pr-32">
-              <span className="text-[10px] font-mono text-cyan/60 uppercase tracking-wider">✦ YOUR ANSWER</span>
-              <button onClick={copyAnswer} className="text-cyan/60 hover:text-cyan p-0.5">
-                {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              </button>
-            </div>
-            <p className="text-white font-medium leading-relaxed pr-32" style={{ fontSize: `${fontSize}px` }}>
-              {result.answer}
-            </p>
-
+        {/* ANSWER HISTORY - TOP (Most recent first) */}
+        {answerHistory.length > 0 && (
+          <div className="space-y-0">
+            {answerHistory.map((item, idx) => (
+              <div key={item.id} className="border-b border-cyan/20 bg-cyan/5 px-4 py-3">
+                <div className="flex items-start justify-between gap-2 mb-1 pr-32">
+                  <span className="text-[10px] font-mono text-cyan/60 uppercase tracking-wider">
+                    ✦ ANSWER {idx === 0 ? "(LATEST)" : `#${idx + 1}`}
+                  </span>
+                  <button onClick={() => {
+                    navigator.clipboard.writeText(item.answer);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }} className="text-cyan/60 hover:text-cyan p-0.5">
+                    {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                <p className="text-white font-medium leading-relaxed pr-32" style={{ fontSize: `${fontSize}px` }}>
+                  {item.answer}
+                </p>
+              </div>
+            ))}
           </div>
         )}
 
@@ -597,6 +615,7 @@ export default function Assistant() {
         <button
           onClick={() => {
             setResult(null);
+            setAnswerHistory([]);
             setPreviousContext("");
             setError("");
             setSpeakerInfo("");
