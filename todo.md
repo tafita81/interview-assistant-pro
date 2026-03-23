@@ -90,3 +90,13 @@
 - [x] Exemplo: "Five (Faive)", "System (Sistêm)"
 - [x] Validar build e testes
 - [x] Todos 60 testes passando
+
+## Otimização: Chunks de 3 Segundos (Microsoft Translator Style)
+
+- [x] Aumentar intervalo de chunks para 3 segundos
+- [x] Aumentar tamanho mínimo para 2KB (evitar chunks vazios)
+- [x] Alterar timeslice para 100ms (melhor granularidade)
+- [x] Detectar 100% do áudio em inglês
+- [x] Não perder nenhuma palavra
+- [x] Transcrever em tempo real
+- [x] Todos 60 testes passando

@@ -229,7 +229,7 @@ export default function Assistant() {
   // ===== CONTINUOUS AUDIO (2-second chunks) =====
   const processAudioChunk = useCallback(async (blob: Blob, mimeType: string) => {
     // Aceitar chunks com pelo menos 1KB (áudio válido)
-    if (blob.size < 1000) return;
+    if (blob.size < 2000) return; // Require at least 2KB (2-3 seconds)
     if (isProcessingAudioRef.current) return;
     isProcessingAudioRef.current = true;
     setIsProcessingAudio(true);
@@ -331,7 +331,7 @@ export default function Assistant() {
           const blob = new Blob(chunks, { type: actualMime });
           processAudioChunk(blob, actualMime);
         };
-        recorder.start(200);
+        recorder.start(100); // Capture every 100ms
         mediaRecorderRef.current = recorder;
       };
 
